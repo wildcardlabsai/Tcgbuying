@@ -3,13 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { searchAlternativeCards, MatchedCard } from '../services/cardRecognitionService';
 import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
 import { useMoney } from '../CurrencyContext';
 import CardLinks from './CardLinks';
 import PriceDetails from './PriceDetails';
+import SoldPanel from './SoldPanel';
+import { fetchSoldStatus, SoldStatus } from '../services/soldService';
 
 /** Live Pokémon price lookup for dealers: real market prices, per printing, with your offer percentages applied. */
 export default function PriceGuide({ storefront }: { storefront: Storefront | null }) {
@@ -19,6 +21,10 @@ export default function PriceGuide({ storefront }: { storefront: Storefront | nu
   const [results, setResults] = useState<MatchedCard[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<SoldStatus | null>(null);
+  useEffect(() => {
+    fetchSoldStatus().then(setStatus);
+  }, []);
 
   const search = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -39,9 +45,18 @@ export default function PriceGuide({ storefront }: { storefront: Storefront | nu
       <div className="border-b border-slate-800 pb-4">
         <h2 className="text-xl font-black text-white">Price Guide</h2>
         <p className="text-xs text-slate-400 mt-1">
-          Look up any Pokémon card. Prices are TCGplayer market prices (based on recent TCGplayer sales) with Cardmarket as a cross-check, and
-          PriceCharting too if it is set up. They are not eBay sold prices, so check a card's recent eBay sales before a big offer.
+          Look up any Pokémon card. Prices are TCGplayer market prices (based on recent TCGplayer sales) with Cardmarket as a cross-check.
+          For a big offer, use <strong className="text-slate-200">Check eBay sold prices</strong> on a card to see what it actually sold for on eBay recently.
         </p>
+        {status && (
+          <p className="text-[11px] mt-2 text-slate-500">
+            {!status.configured
+              ? 'eBay sold prices: not set up (add SOLD_COMPS_API_KEY on the server).'
+              : status.ok
+                ? `eBay sold prices: connected${status.plan ? ` (${status.plan})` : ''} · ${status.remaining} lookups left${status.resetAt ? ` until ${new Date(status.resetAt).toLocaleDateString('en-GB')}` : ''}. Each check uses one; repeat checks of a card are cached for a day.`
+                : 'eBay sold prices: could not check the allowance right now.'}
+          </p>
+        )}
       </div>
 
       <form onSubmit={search} className="flex gap-2">
@@ -93,6 +108,9 @@ export default function PriceGuide({ storefront }: { storefront: Storefront | nu
               )}
               <PriceDetails card={card} fmt={fmt} />
               <CardLinks card={card} />
+              {status?.configured && (
+                <SoldPanel card={card} shopCurrency={pricing.currency} />
+              )}
             </div>
           </div>
         ))}

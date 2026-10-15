@@ -34,7 +34,7 @@ npm run build            # production bundle in dist/
 - Vercel limits request bodies to ~4.5 MB; photos are downscaled in the browser before upload.
 
 ## Notes
-- Card values come from TCGplayer market prices (via the Pokémon TCG API, with TCGdex as a fallback) and are cross-checked against Cardmarket, converted with a flat factor. They are not eBay sold prices (eBay's sold-data API is restricted to approved partners). Set `PRICECHARTING_API_KEY` (paid) to show PriceCharting alongside, and `PRICE_PRIMARY=pricecharting` to base offers on it.
+- Card values come from TCGplayer market prices (via the Pokémon TCG API, with TCGdex as a fallback) and are cross-checked against Cardmarket, converted with a flat factor. They are not eBay sold prices (eBay's sold-data API is restricted to approved partners). 
 - `LegalModal.tsx` holds draft Terms and Privacy text. Have it reviewed by a professional and add your company details before launch.
 
 ## Photo recognition
@@ -43,3 +43,12 @@ npm run build            # production bundle in dist/
 2. **Backup (no key needed):** if the AI is unavailable, the browser reads the printed card name and number with OCR
    (tesseract.js, served from `/ocr`, copied at build time by `scripts/copy-ocr-assets.mjs`) and looks the card up in the free catalogues.
    It is less accurate, so matches from this mode show a lower confidence and the collector is asked to confirm.
+
+## eBay sold prices (SoldComps)
+Dealers can check recent eBay sold prices for a card (raw or PSA/BGS/CGC graded) from the Price Guide and from any submitted card.
+Set `SOLD_COMPS_API_KEY` (from https://sold-comps.com; the free plan is 100 lookups a month). Behaviour:
+- One lookup is one SoldComps request. Results are cached for a day, the allowance is checked first (free `/usage` call), and a few requests are always kept spare.
+- Sales are from the last 90 days on eBay UK (shop currency GBP) or eBay US (otherwise), restricted to the Pokémon single-cards category.
+  Lots, proxies, other cards, the wrong grade and outliers are removed. Best Offer sales report the asking price, so they are left out unless `SOLD_COMPS_HYDRATE_BOA=true`.
+- Lookups are limited per signed-in dealer. Without Firebase sign-in they are limited per IP and across the site; set `SOLD_COMPS_REQUIRE_AUTH=true` once dealers sign in with Firebase.
+- `/api/sold-status` shows whether it is set up and how many lookups remain.

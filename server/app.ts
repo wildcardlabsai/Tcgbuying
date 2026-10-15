@@ -9,7 +9,9 @@ import { GoogleGenAI } from '@google/genai';
 import { emailRouter } from './email';
 import { findMatches, searchCards, splitQuery, CatalogCard } from './cardLookup';
 import { parseOcr } from './ocrIdentify';
-import { withPriceCharting } from './pricecharting';
+import { getGbpRates } from './fx';
+import { verifyIdToken } from './auth';
+import { lookupSold, getUsage, soldCompsConfigured, isGrade, SoldError } from './soldComps';
 
 dotenv.config();
 
@@ -73,7 +75,6 @@ function toMatchedPayload(c: CatalogCard) {
     imageUrl: c.imageUrl,
     tcgplayerUrl: c.tcgplayerUrl,
     cardmarketUrl: c.cardmarketUrl,
-    pricechartingUrl: c.pricechartingUrl,
     sourceUrl: c.sourceUrl,
     marketPrice: price,
     priceSource: c.priceSource,
@@ -83,7 +84,6 @@ function toMatchedPayload(c: CatalogCard) {
     variants: c.variants,
     priceVariant: c.priceVariant,
     cardmarketPrice: c.cardmarketPrice,
-    pricechartingPrice: c.pricechartingPrice,
     priceDisagree: c.priceDisagree,
     storeCashOffer: Math.round(price * 0.72 * 100) / 100,
     storeCreditOffer: Math.round(price * 0.84 * 100) / 100,
@@ -321,7 +321,7 @@ Format your response as valid JSON ONLY without markdown backticks:
     }
 
     const resolvedCard = await fetchCardFromFreeApis(detectedName, 'Pokémon', detectedSet, detectedNumber);
-    const matchedData = await withPriceCharting(resolvedCard as CatalogCard);
+    const matchedData = resolvedCard as CatalogCard;
 
     // Graded slabs are not priced by the raw-card sources, so we do not invent a graded value.
     const gradedNote = isGraded ? ' This looks like a graded card: the price shown is for the raw card, and the shop will price the grade itself.' : '';
@@ -608,9 +608,7 @@ app.get('/api/search-cards', async (req: Request, res: Response) => {
 
   const { name, number } = splitQuery(raw);
   const results = await searchCards({ q: name, game: 'Pokémon', number, limit: 10 });
-  // Cross-check the best match against PriceCharting when it is configured
-  const enriched = results.length ? [await withPriceCharting(results[0]), ...results.slice(1)] : results;
-  res.json({ results: enriched.map(toMatchedPayload) });
+  res.json({ results: results.map(toMatchedPayload) });
 });
 
 /**
@@ -643,7 +641,7 @@ app.post('/api/identify-from-text', async (req: Request, res: Response) => {
   }
 
   const [first, ...rest] = best.cards;
-  const top1 = await withPriceCharting(first);
+  const top1 = first;
   const numberMatched = Boolean(parsed.number) && top1.cardNumber.split('/')[0] === parsed.number!.split('/')[0];
   res.json({
     success: true,
@@ -663,29 +661,84 @@ app.post('/api/identify-from-text', async (req: Request, res: Response) => {
   });
 });
 
-// GBP -> EUR/USD reference rates (ECB via frankfurter.dev), cached for 12h with static fallback.
-const FALLBACK_RATES = { EUR: 1.17, USD: 1.27 };
-let ratesCache: { at: number; rates: { EUR: number; USD: number } } | null = null;
-app.get('/api/rates', async (_req: Request, res: Response) => {
-  res.set('Cache-Control', 'public, max-age=3600');
-  if (ratesCache && Date.now() - ratesCache.at < 12 * 3600_000) {
-    res.json({ base: 'GBP', rates: ratesCache.rates, source: 'live' });
+/** Tiny in-memory limiter (per server instance): true when `key` has used up `max` hits in `windowMs`. */
+const hitLog = new Map<string, number[]>();
+function overLimit(key: string, max: number, windowMs: number): boolean {
+  const now = Date.now();
+  const recent = (hitLog.get(key) || []).filter((t) => now - t < windowMs);
+  recent.push(now);
+  hitLog.set(key, recent);
+  return recent.length > max;
+}
+
+/**
+ * GET /api/sold?name=&number=&set=&grade=raw|psa10|psa9|bgs95|cgc10&currency=GBP
+ * Recent eBay sold prices for a card through SoldComps. Each uncached call uses one request of your SoldComps
+ * allowance, so it is capped per signed-in dealer, and more tightly for anonymous callers.
+ */
+app.get('/api/sold', async (req: Request, res: Response) => {
+  if (!soldCompsConfigured()) {
+    res.status(503).json({ success: false, error: 'not_configured' });
     return;
   }
+  const name = String(req.query.name || '').trim().slice(0, 80);
+  const number = String(req.query.number || '').trim().slice(0, 12);
+  const setName = String(req.query.set || '').trim().slice(0, 80);
+  const grade = req.query.grade ?? 'raw';
+  const currency = String(req.query.currency || 'GBP').toUpperCase().slice(0, 3);
+  if (name.length < 2 || !isGrade(grade) || (number && !/^[A-Za-z0-9/ -]+$/.test(number))) {
+    res.status(400).json({ success: false, error: 'invalid' });
+    return;
+  }
+
+  const uid = await verifyIdToken(req.headers.authorization);
+  if (!uid && process.env.SOLD_COMPS_REQUIRE_AUTH === 'true') {
+    res.status(401).json({ success: false, error: 'sign_in_required' });
+    return;
+  }
+  const limited = uid
+    ? overLimit(`sold:uid:${uid}`, 40, 3600_000)
+    : overLimit(`sold:ip:${req.ip}`, 8, 3600_000) || overLimit('sold:global-anon', 40, 24 * 3600_000);
+  if (limited) {
+    res.status(429).json({ success: false, error: 'rate_limited' });
+    return;
+  }
+
   try {
-    const r = await fetch('https://api.frankfurter.dev/v1/latest?base=GBP&symbols=EUR,USD', {
-      signal: AbortSignal.timeout(5000),
-    });
-    const j: any = r.ok ? await r.json() : null;
-    if (j?.rates?.EUR > 0 && j?.rates?.USD > 0) {
-      ratesCache = { at: Date.now(), rates: { EUR: j.rates.EUR, USD: j.rates.USD } };
-      res.json({ base: 'GBP', rates: ratesCache.rates, source: 'live' });
+    const summary = await lookupSold({ name, number: number || undefined, setName: setName || undefined, grade, currency });
+    res.json({ success: true, summary });
+  } catch (err) {
+    if (err instanceof SoldError) {
+      const status = err.kind === 'quota' || err.kind === 'budget' || err.kind === 'rate_limited' ? 429 : err.kind === 'upstream' ? 502 : 503;
+      res.status(status).json({ success: false, error: err.kind });
       return;
     }
-  } catch {
-    /* fall through */
+    console.error('sold lookup failed', err);
+    res.status(500).json({ success: false, error: 'failed' });
   }
-  res.json({ base: 'GBP', rates: FALLBACK_RATES, source: 'fallback' });
+});
+
+/** GET /api/sold-status: whether SoldComps is set up and how much allowance is left (free call, no key shown). */
+app.get('/api/sold-status', async (_req: Request, res: Response) => {
+  if (!soldCompsConfigured()) {
+    res.json({ configured: false });
+    return;
+  }
+  const usage = await getUsage();
+  res.json({
+    configured: true,
+    ok: Boolean(usage),
+    plan: usage?.plan,
+    remaining: usage ? usage.remaining + usage.credits : undefined,
+    limit: usage?.limit,
+    resetAt: usage?.reset_at,
+  });
+});
+
+app.get('/api/rates', async (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  const { rates, source } = await getGbpRates();
+  res.json({ base: 'GBP', rates, source });
 });
 
 app.use('/api', emailRouter);
@@ -698,7 +751,11 @@ app.get('/api/health', (req: Request, res: Response) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     // Booleans only: whether each optional service has its settings, never the values.
-    services: { ai: Boolean(aiClient), email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM) },
+    services: {
+      ai: Boolean(aiClient),
+      email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      ebaySold: soldCompsConfigured(),
+    },
   });
 });
 

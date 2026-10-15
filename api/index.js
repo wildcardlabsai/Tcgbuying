@@ -15584,10 +15584,10 @@ var require_get_proto = __commonJS({
 var require_hasown = __commonJS({
   "node_modules/hasown/index.js"(exports, module) {
     "use strict";
-    var call = Function.prototype.call;
+    var call2 = Function.prototype.call;
     var $hasOwn = Object.prototype.hasOwnProperty;
     var bind = require_function_bind();
-    module.exports = bind.call(call, $hasOwn);
+    module.exports = bind.call(call2, $hasOwn);
   }
 });
 
@@ -21094,7 +21094,7 @@ var require_application = __commonJS({
     };
     app2.del = deprecate3.function(app2.delete, "app.del: Use app.delete instead");
     app2.render = function render(name, options, callback) {
-      var cache2 = this.cache;
+      var cache4 = this.cache;
       var done = callback;
       var engines = this.engines;
       var opts = options;
@@ -21113,7 +21113,7 @@ var require_application = __commonJS({
         renderOptions.cache = this.enabled("view cache");
       }
       if (renderOptions.cache) {
-        view = cache2[name];
+        view = cache4[name];
       }
       if (!view) {
         var View2 = this.get("view");
@@ -21129,7 +21129,7 @@ var require_application = __commonJS({
           return done(err);
         }
         if (renderOptions.cache) {
-          cache2[name] = view;
+          cache4[name] = view;
         }
       }
       tryRender(view, renderOptions, done);
@@ -32198,7 +32198,7 @@ var require_bignumber = __commonJS({
   "node_modules/bignumber.js/bignumber.js"(exports, module) {
     (function(globalObject) {
       "use strict";
-      var BigNumber, isNumeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i, mathceil = Math.ceil, mathfloor = Math.floor, bignumberError = "[BigNumber Error] ", tooManyDigits = bignumberError + "Number primitive has more than 15 significant digits: ", BASE = 1e14, LOG_BASE = 14, MAX_SAFE_INTEGER = 9007199254740991, POWS_TEN = [1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13], SQRT_BASE = 1e7, MAX = 1e9;
+      var BigNumber, isNumeric = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i, mathceil = Math.ceil, mathfloor = Math.floor, bignumberError = "[BigNumber Error] ", tooManyDigits = bignumberError + "Number primitive has more than 15 significant digits: ", BASE2 = 1e14, LOG_BASE = 14, MAX_SAFE_INTEGER = 9007199254740991, POWS_TEN = [1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13], SQRT_BASE = 1e7, MAX = 1e9;
       function clone2(configObject) {
         var div, convertBase, parseNumeric, P = BigNumber2.prototype = { constructor: BigNumber2, toString: null, valueOf: null }, ONE = new BigNumber2(1), DECIMAL_PLACES = 20, ROUNDING_MODE = 4, TO_EXP_NEG = -7, TO_EXP_POS = 21, MIN_EXP = -1e7, MAX_EXP = 1e7, CRYPTO = false, MODULO_MODE = 1, POW_PRECISION = 0, FORMAT = {
           prefix: "",
@@ -32450,7 +32450,7 @@ var require_bignumber = __commonJS({
               if (String(c[0]).length == i2) {
                 for (i2 = 0; i2 < c.length; i2++) {
                   n = c[i2];
-                  if (n < 0 || n >= BASE || n !== mathfloor(n)) break out;
+                  if (n < 0 || n >= BASE2 || n !== mathfloor(n)) break out;
                 }
                 if (n !== 0) return true;
               }
@@ -32667,7 +32667,7 @@ var require_bignumber = __commonJS({
             e2 = x2.e - y.e;
             s2 = dp + e2 + 1;
             if (!base) {
-              base = BASE;
+              base = BASE2;
               e2 = bitFloor(x2.e / LOG_BASE) - bitFloor(y.e / LOG_BASE);
               s2 = s2 / LOG_BASE | 0;
             }
@@ -32746,7 +32746,7 @@ var require_bignumber = __commonJS({
               more = rem[0] != null;
               if (!qc[0]) qc.splice(0, 1);
             }
-            if (base == BASE) {
+            if (base == BASE2) {
               for (i2 = 1, s2 = qc[0]; s2 >= 10; s2 /= 10, i2++) ;
               round(q, dp + (q.e = i2 + e2 * LOG_BASE - 1) + 1, rm, more);
             } else {
@@ -32905,12 +32905,12 @@ var require_bignumber = __commonJS({
                     for (k = 1; j >= 10; j /= 10, k++) ;
                     if (i2 != k) {
                       x2.e++;
-                      if (xc[0] == BASE) xc[0] = 1;
+                      if (xc[0] == BASE2) xc[0] = 1;
                     }
                     break;
                   } else {
                     xc[ni] += k;
-                    if (xc[ni] != BASE) break;
+                    if (xc[ni] != BASE2) break;
                     xc[ni--] = 0;
                     k = 1;
                   }
@@ -33119,12 +33119,12 @@ var require_bignumber = __commonJS({
           }
           b = (j = yc.length) - (i2 = xc.length);
           if (b > 0) for (; b--; xc[i2++] = 0) ;
-          b = BASE - 1;
+          b = BASE2 - 1;
           for (; j > a; ) {
             if (xc[--j] < yc[j]) {
               for (i2 = j; i2 && !xc[--i2]; xc[i2] = b) ;
               --xc[i2];
-              xc[j] += BASE;
+              xc[j] += BASE2;
             }
             xc[j] -= yc[j];
           }
@@ -33186,7 +33186,7 @@ var require_bignumber = __commonJS({
             ycL = i2;
           }
           for (i2 = xcL + ycL, zc = []; i2--; zc.push(0)) ;
-          base = BASE;
+          base = BASE2;
           sqrtBase = SQRT_BASE;
           for (i2 = ycL; --i2 >= 0; ) {
             c = 0;
@@ -33252,8 +33252,8 @@ var require_bignumber = __commonJS({
             b = a;
           }
           for (a = 0; b; ) {
-            a = (xc[--b] = xc[b] + yc[b] + a) / BASE | 0;
-            xc[b] = BASE === xc[b] ? 0 : xc[b] % BASE;
+            a = (xc[--b] = xc[b] + yc[b] + a) / BASE2 | 0;
+            xc[b] = BASE2 === xc[b] ? 0 : xc[b] % BASE2;
           }
           if (a) {
             xc = [a].concat(xc);
@@ -62986,12 +62986,12 @@ var APIPromise = class _APIPromise {
   }
   asResponse() {
     var _b;
-    const src = (_b = this._callSource) !== null && _b !== void 0 ? _b : this._callSource = this._promise.then(([, call]) => call);
-    return src.then((call) => {
-      if (!call.response) {
+    const src = (_b = this._callSource) !== null && _b !== void 0 ? _b : this._callSource = this._promise.then(([, call2]) => call2);
+    return src.then((call2) => {
+      if (!call2.response) {
         throw new Error("APIPromise.asResponse: response unavailable");
       }
-      return call.response;
+      return call2.response;
     });
   }
   async withResponse() {
@@ -63003,7 +63003,7 @@ var APIPromise = class _APIPromise {
   }
   _thenUnwrap(transform) {
     var _b;
-    const data = this._promise.then(([value, call]) => [transform(value), call]);
+    const data = this._promise.then(([value, call2]) => [transform(value), call2]);
     data.catch(() => {
     });
     return new _APIPromise(data, (_b = this._callSource) !== null && _b !== void 0 ? _b : void 0);
@@ -63012,18 +63012,18 @@ var APIPromise = class _APIPromise {
 _a = Symbol.toStringTag;
 function unwrapAsAPIPromise(p) {
   const inner = p.$inspect();
-  const data = inner.then(([r2, call]) => {
+  const data = inner.then(([r2, call2]) => {
     if (!r2.ok) {
       throw r2.error;
     }
-    return [r2.value, call];
+    return [r2.value, call2];
   });
-  const callSource = inner.then(([r2, call]) => {
+  const callSource = inner.then(([r2, call2]) => {
     var _b;
-    if (!r2.ok && !((_b = call.response) === null || _b === void 0 ? void 0 : _b.ok)) {
+    if (!r2.ok && !((_b = call2.response) === null || _b === void 0 ? void 0 : _b.ok)) {
       throw r2.error;
     }
-    return call;
+    return call2;
   });
   data.catch(() => {
   });
@@ -66476,11 +66476,11 @@ function warnIgnoredOption(name, value) {
   }
 }
 async function unwrapWithSdkHttpResponse(promise) {
-  const [result, call] = await promise.$inspect();
+  const [result, call2] = await promise.$inspect();
   if (!result.ok) {
     throw wrapSDKError(result.error);
   }
-  return attachSdkHttpResponse(result.value, call);
+  return attachSdkHttpResponse(result.value, call2);
 }
 async function wrapSDKCall(operation) {
   try {
@@ -66535,11 +66535,11 @@ function wrapStreamErrors(stream) {
     }
   });
 }
-function attachSdkHttpResponse(value, call) {
-  if (!isPlainObject(value) || call.status !== "complete") {
+function attachSdkHttpResponse(value, call2) {
+  if (!isPlainObject(value) || call2.status !== "complete") {
     return value;
   }
-  return Object.assign(Object.assign({}, value), { sdkHttpResponse: createSdkHttpResponse(call.response, value) });
+  return Object.assign(Object.assign({}, value), { sdkHttpResponse: createSdkHttpResponse(call2.response, value) });
 }
 function createSdkHttpResponse(response, parsedBody) {
   const headers = {};
@@ -66772,11 +66772,11 @@ var GeminiNextGenEnvironmentFiles = class {
       mimeType = "application/octet-stream";
     }
     const cleanEnv = targetEnv.startsWith("environments/") ? targetEnv.replace(/^environments\//, "") : targetEnv;
-    const [result, call] = await environmentsInternalStartUpload(this.resolveClient(params.api_version), cleanEnv, cleanPath, "start", sizeBytes, mimeType, "resumable", params.api_version, params.extract, params.overwrite, toGoogleGenAIRequestOptions(options)).$inspect();
+    const [result, call2] = await environmentsInternalStartUpload(this.resolveClient(params.api_version), cleanEnv, cleanPath, "start", sizeBytes, mimeType, "resumable", params.api_version, params.extract, params.overwrite, toGoogleGenAIRequestOptions(options)).$inspect();
     if (!result.ok) {
       throw wrapSDKError(result.error);
     }
-    const uploadUrl = call.status === "complete" ? (_e = (_d = (_c = call.response) === null || _c === void 0 ? void 0 : _c.headers) === null || _d === void 0 ? void 0 : _d.get("x-goog-upload-url")) !== null && _e !== void 0 ? _e : (_g = (_f = call.response) === null || _f === void 0 ? void 0 : _f.headers) === null || _g === void 0 ? void 0 : _g.get("X-Goog-Upload-URL") : void 0;
+    const uploadUrl = call2.status === "complete" ? (_e = (_d = (_c = call2.response) === null || _c === void 0 ? void 0 : _c.headers) === null || _d === void 0 ? void 0 : _d.get("x-goog-upload-url")) !== null && _e !== void 0 ? _e : (_g = (_f = call2.response) === null || _f === void 0 ? void 0 : _f.headers) === null || _g === void 0 ? void 0 : _g.get("X-Goog-Upload-URL") : void 0;
     if (!uploadUrl) {
       throw new Error("Failed to get upload URL from upload handshake response.");
     }
@@ -69838,41 +69838,207 @@ ${full}`;
   return { names, number, setCode, gameHint };
 }
 
-// server/pricecharting.ts
-var USD_GBP2 = 0.78;
-async function withPriceCharting(card) {
-  const key = process.env.PRICECHARTING_API_KEY;
-  if (!key || !card.name) return card;
-  const number = card.cardNumber.split("/")[0];
-  const query = `pokemon ${card.setName} ${card.name} ${number}`.trim();
+// server/fx.ts
+var FALLBACK_RATES = { EUR: 1.17, USD: 1.27 };
+var cache2 = null;
+async function getGbpRates() {
+  if (cache2 && Date.now() - cache2.at < 12 * 36e5) return { rates: cache2.rates, source: "live" };
   try {
-    const res = await fetch(`https://www.pricecharting.com/api/product?t=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}`, {
-      signal: AbortSignal.timeout(6e3),
-      headers: { Accept: "application/json" }
-    });
-    if (!res.ok) return card;
-    const j = await res.json();
-    const cents = Number(j?.["loose-price"]);
-    if (j?.status === "error" || !Number.isFinite(cents) || cents <= 0) return card;
-    const gbp = Math.round(cents / 100 * USD_GBP2 * 100) / 100;
-    const out = {
-      ...card,
-      pricechartingPrice: gbp,
-      pricechartingUrl: `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(query)}`
-    };
-    if (process.env.PRICE_PRIMARY === "pricecharting") {
-      out.rawMarketPrice = gbp;
-      out.priceKnown = true;
-      out.priceSource = "PriceCharting";
-      out.priceLow = void 0;
-      out.priceHigh = void 0;
-    } else if (card.rawMarketPrice > 0) {
-      const ratio = card.rawMarketPrice / gbp;
-      if (ratio > 1.4 || ratio < 0.7) out.priceDisagree = true;
+    const r2 = await fetch("https://api.frankfurter.dev/v1/latest?base=GBP&symbols=EUR,USD", { signal: AbortSignal.timeout(5e3) });
+    const j = r2.ok ? await r2.json() : null;
+    if (j?.rates?.EUR > 0 && j?.rates?.USD > 0) {
+      cache2 = { at: Date.now(), rates: { EUR: j.rates.EUR, USD: j.rates.USD } };
+      return { rates: cache2.rates, source: "live" };
     }
-    return out;
   } catch {
-    return card;
+  }
+  return { rates: FALLBACK_RATES, source: "fallback" };
+}
+
+// server/auth.ts
+async function verifyIdToken(authorizationHeader) {
+  const idToken = (authorizationHeader || "").replace(/^Bearer\s+/i, "");
+  if (!idToken) return null;
+  try {
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${firebase_applet_config_default.apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+      signal: AbortSignal.timeout(6e3)
+    });
+    return res.ok ? (await res.json()).users?.[0]?.localId ?? null : null;
+  } catch {
+    return null;
+  }
+}
+
+// server/soldComps.ts
+var BASE = "https://api.sold-comps.com";
+var CATEGORY_ID = process.env.SOLD_COMPS_CATEGORY_ID || "183454";
+var WINDOW_DAYS = 90;
+var CACHE_MS2 = 24 * 36e5;
+var RESERVE = 3;
+var soldCompsConfigured = () => Boolean(process.env.SOLD_COMPS_API_KEY);
+var SoldError = class extends Error {
+  constructor(kind, message) {
+    super(message || kind);
+    this.kind = kind;
+  }
+};
+var GRADES = {
+  raw: { label: "Raw (ungraded)", terms: "-psa -bgs -cgc -sgc -ace -graded -slab -beckett", match: null },
+  psa10: { label: "PSA 10", terms: "psa 10", match: /\bpsa\s*-?\s*10\b/i },
+  psa9: { label: "PSA 9", terms: "psa 9", match: /\bpsa\s*-?\s*9\b/i },
+  bgs95: { label: "BGS 9.5", terms: "bgs 9.5", match: /\bbgs\s*-?\s*9\.5\b/i },
+  cgc10: { label: "CGC 10", terms: "cgc 10", match: /\bcgc\s*-?\s*10\b/i }
+};
+var isGrade = (g) => typeof g === "string" && g in GRADES;
+var usageCache = null;
+async function call(path2) {
+  return fetch(`${BASE}${path2}`, {
+    headers: { Authorization: `Bearer ${process.env.SOLD_COMPS_API_KEY}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(25e3)
+  });
+}
+async function getUsage(force = false) {
+  if (!soldCompsConfigured()) return null;
+  if (!force && usageCache && Date.now() - usageCache.at < 5 * 6e4) return usageCache.value;
+  try {
+    const res = await call("/usage");
+    if (!res.ok) return null;
+    const j = await res.json();
+    const value = {
+      plan: j.plan_label || j.plan || "",
+      limit: Number(j.usage?.limit) || 0,
+      used: Number(j.usage?.used) || 0,
+      remaining: Number(j.usage?.remaining) || 0,
+      reset_at: j.usage?.reset_at || "",
+      credits: Number(j.credits?.balance) || 0
+    };
+    usageCache = { at: Date.now(), value };
+    return value;
+  } catch {
+    return null;
+  }
+}
+var EXCLUDE = "-lot -bundle -proxy -custom -replica -reprint -repack -digital -empty";
+function buildKeyword(q) {
+  const parts = ["pokemon", q.name.trim()];
+  if (q.number) parts.push(q.number.trim());
+  else if (q.setName) parts.push(q.setName.trim());
+  parts.push(GRADES[q.grade].terms, EXCLUDE);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
+var BAD_TITLE = /\b(lot|bundle|proxy|custom|replica|reprint|repack|digital|empty|binder|collection|sealed|booster|bulk)\b/i;
+function median(sorted) {
+  const m2 = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[m2] : (sorted[m2 - 1] + sorted[m2]) / 2;
+}
+function summarise(items, q, site, toGbp, now = Date.now()) {
+  const nameWords = q.name.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !["ex", "vmax", "vstar"].includes(w));
+  const number = q.number?.split("/")[0].replace(/^0+(?=\d)/, "");
+  const gradeRe = GRADES[q.grade].match;
+  const since = now - WINDOW_DAYS * 864e5;
+  let excludedBestOffer = 0;
+  let excludedOther = 0;
+  const clean = [];
+  for (const it of items) {
+    if (it?.listingType && it.listingType !== "sold") continue;
+    const title = String(it?.title || "");
+    const lower2 = title.toLowerCase();
+    const raw = Number(it?.soldPrice);
+    const date = String(it?.endedAt || "");
+    const when = Date.parse(date);
+    const price = Number.isFinite(raw) && raw > 0 ? toGbp(raw, String(it?.soldCurrency || "")) : null;
+    const sameCard = nameWords.every((w) => lower2.includes(w)) && (!number || new RegExp(`(^|[^0-9])0*${number}([^0-9]|$)`).test(title));
+    const gradeOk = gradeRe ? gradeRe.test(title) : !/\b(psa|bgs|cgc|sgc|graded|slab)\b/i.test(title);
+    if (price === null || !sameCard || !gradeOk || BAD_TITLE.test(title) || Number.isFinite(when) && when < since) {
+      excludedOther++;
+      continue;
+    }
+    if (it?.bestOfferAccepted && !(it?.boaHydrated && it?.boaAcceptedCurrency === it?.soldCurrency)) {
+      excludedBestOffer++;
+      continue;
+    }
+    clean.push({ price, date, title, url: String(it?.url || ""), bids: typeof it?.bidCount === "number" ? it.bidCount : null });
+  }
+  let kept = clean;
+  if (clean.length >= 5) {
+    const m2 = median(clean.map((s2) => s2.price).sort((a, b) => a - b));
+    kept = clean.filter((s2) => s2.price >= m2 * 0.4 && s2.price <= m2 * 2.5);
+    excludedOther += clean.length - kept.length;
+  }
+  kept.sort((a, b) => a.date < b.date ? 1 : -1);
+  const prices = kept.slice(0, 30).map((s2) => s2.price).sort((a, b) => a - b);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return {
+    grade: q.grade,
+    site,
+    median: prices.length ? r2(median(prices)) : null,
+    low: prices.length ? r2(prices[0]) : null,
+    high: prices.length ? r2(prices[prices.length - 1]) : null,
+    count: prices.length,
+    windowDays: WINDOW_DAYS,
+    excludedBestOffer,
+    excludedOther,
+    recent: kept.slice(0, 8).map((s2) => ({ ...s2, price: r2(s2.price) }))
+  };
+}
+var cache3 = /* @__PURE__ */ new Map();
+var inflight = /* @__PURE__ */ new Map();
+async function lookupSold(q) {
+  if (!soldCompsConfigured()) throw new SoldError("not_configured");
+  const site = q.currency === "GBP" ? "ebay.co.uk" : "ebay.com";
+  const keyword = buildKeyword(q);
+  const key = `${site}|${keyword}`;
+  const hit = cache3.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS2) return { ...hit.value, cached: true };
+  const pending = inflight.get(key);
+  if (pending) return pending;
+  const run = (async () => {
+    const usage = await getUsage();
+    if (usage && usage.remaining + usage.credits <= RESERVE) throw new SoldError("budget");
+    const since = new Date(Date.now() - WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      keyword,
+      ebaySite: site,
+      count: "60",
+      sortOrder: "endedRecently",
+      categoryId: CATEGORY_ID,
+      soldAfter: since
+    });
+    if (process.env.SOLD_COMPS_HYDRATE_BOA === "true") params.set("hydrateBoa", "true");
+    let res;
+    try {
+      res = await call(`/v1/scrape?${params.toString()}`);
+    } catch {
+      throw new SoldError("upstream", "timeout");
+    }
+    if (res.status === 401) throw new SoldError("invalid_key");
+    if (res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      throw new SoldError(body?.code === "quota_exceeded" ? "quota" : "rate_limited");
+    }
+    if (!res.ok) throw new SoldError("upstream", `http_${res.status}`);
+    const data = await res.json();
+    if (usageCache) usageCache.value = { ...usageCache.value, remaining: Math.max(0, usageCache.value.remaining - 1) };
+    const { rates } = await getGbpRates();
+    const toGbp = (amount, currency) => currency === "GBP" ? amount : currency === "USD" ? amount / rates.USD : currency === "EUR" ? amount / rates.EUR : null;
+    const summary = {
+      query: keyword,
+      fetchedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      cached: false,
+      ...summarise(Array.isArray(data?.items) ? data.items : [], q, site, toGbp)
+    };
+    cache3.set(key, { at: Date.now(), value: summary });
+    if (cache3.size > 500) cache3.delete(cache3.keys().next().value);
+    return summary;
+  })();
+  inflight.set(key, run);
+  try {
+    return await run;
+  } finally {
+    inflight.delete(key);
   }
 }
 
@@ -69924,7 +70090,6 @@ function toMatchedPayload(c) {
     imageUrl: c.imageUrl,
     tcgplayerUrl: c.tcgplayerUrl,
     cardmarketUrl: c.cardmarketUrl,
-    pricechartingUrl: c.pricechartingUrl,
     sourceUrl: c.sourceUrl,
     marketPrice: price,
     priceSource: c.priceSource,
@@ -69934,7 +70099,6 @@ function toMatchedPayload(c) {
     variants: c.variants,
     priceVariant: c.priceVariant,
     cardmarketPrice: c.cardmarketPrice,
-    pricechartingPrice: c.pricechartingPrice,
     priceDisagree: c.priceDisagree,
     storeCashOffer: Math.round(price * 0.72 * 100) / 100,
     storeCreditOffer: Math.round(price * 0.84 * 100) / 100,
@@ -70125,7 +70289,7 @@ Format your response as valid JSON ONLY without markdown backticks:
       return;
     }
     const resolvedCard = await fetchCardFromFreeApis(detectedName, "Pok\xE9mon", detectedSet, detectedNumber);
-    const matchedData = await withPriceCharting(resolvedCard);
+    const matchedData = resolvedCard;
     const gradedNote = isGraded ? " This looks like a graded card: the price shown is for the raw card, and the shop will price the grade itself." : "";
     res.json({
       success: true,
@@ -70360,8 +70524,7 @@ app.get("/api/search-cards", async (req, res) => {
   }
   const { name, number } = splitQuery(raw);
   const results = await searchCards({ q: name, game: "Pok\xE9mon", number, limit: 10 });
-  const enriched = results.length ? [await withPriceCharting(results[0]), ...results.slice(1)] : results;
-  res.json({ results: enriched.map(toMatchedPayload) });
+  res.json({ results: results.map(toMatchedPayload) });
 });
 app.post("/api/identify-from-text", async (req, res) => {
   const top = String(req.body?.top ?? "").slice(0, 2e3);
@@ -70386,7 +70549,7 @@ app.post("/api/identify-from-text", async (req, res) => {
     return;
   }
   const [first, ...rest] = best.cards;
-  const top1 = await withPriceCharting(first);
+  const top1 = first;
   const numberMatched = Boolean(parsed.number) && top1.cardNumber.split("/")[0] === parsed.number.split("/")[0];
   res.json({
     success: true,
@@ -70405,27 +70568,70 @@ app.post("/api/identify-from-text", async (req, res) => {
     alternatives: rest.slice(0, 3).map(toMatchedPayload)
   });
 });
-var FALLBACK_RATES = { EUR: 1.17, USD: 1.27 };
-var ratesCache = null;
-app.get("/api/rates", async (_req, res) => {
-  res.set("Cache-Control", "public, max-age=3600");
-  if (ratesCache && Date.now() - ratesCache.at < 12 * 36e5) {
-    res.json({ base: "GBP", rates: ratesCache.rates, source: "live" });
+var hitLog = /* @__PURE__ */ new Map();
+function overLimit(key, max, windowMs) {
+  const now = Date.now();
+  const recent = (hitLog.get(key) || []).filter((t2) => now - t2 < windowMs);
+  recent.push(now);
+  hitLog.set(key, recent);
+  return recent.length > max;
+}
+app.get("/api/sold", async (req, res) => {
+  if (!soldCompsConfigured()) {
+    res.status(503).json({ success: false, error: "not_configured" });
+    return;
+  }
+  const name = String(req.query.name || "").trim().slice(0, 80);
+  const number = String(req.query.number || "").trim().slice(0, 12);
+  const setName = String(req.query.set || "").trim().slice(0, 80);
+  const grade = req.query.grade ?? "raw";
+  const currency = String(req.query.currency || "GBP").toUpperCase().slice(0, 3);
+  if (name.length < 2 || !isGrade(grade) || number && !/^[A-Za-z0-9/ -]+$/.test(number)) {
+    res.status(400).json({ success: false, error: "invalid" });
+    return;
+  }
+  const uid = await verifyIdToken(req.headers.authorization);
+  if (!uid && process.env.SOLD_COMPS_REQUIRE_AUTH === "true") {
+    res.status(401).json({ success: false, error: "sign_in_required" });
+    return;
+  }
+  const limited = uid ? overLimit(`sold:uid:${uid}`, 40, 36e5) : overLimit(`sold:ip:${req.ip}`, 8, 36e5) || overLimit("sold:global-anon", 40, 24 * 36e5);
+  if (limited) {
+    res.status(429).json({ success: false, error: "rate_limited" });
     return;
   }
   try {
-    const r2 = await fetch("https://api.frankfurter.dev/v1/latest?base=GBP&symbols=EUR,USD", {
-      signal: AbortSignal.timeout(5e3)
-    });
-    const j = r2.ok ? await r2.json() : null;
-    if (j?.rates?.EUR > 0 && j?.rates?.USD > 0) {
-      ratesCache = { at: Date.now(), rates: { EUR: j.rates.EUR, USD: j.rates.USD } };
-      res.json({ base: "GBP", rates: ratesCache.rates, source: "live" });
+    const summary = await lookupSold({ name, number: number || void 0, setName: setName || void 0, grade, currency });
+    res.json({ success: true, summary });
+  } catch (err) {
+    if (err instanceof SoldError) {
+      const status = err.kind === "quota" || err.kind === "budget" || err.kind === "rate_limited" ? 429 : err.kind === "upstream" ? 502 : 503;
+      res.status(status).json({ success: false, error: err.kind });
       return;
     }
-  } catch {
+    console.error("sold lookup failed", err);
+    res.status(500).json({ success: false, error: "failed" });
   }
-  res.json({ base: "GBP", rates: FALLBACK_RATES, source: "fallback" });
+});
+app.get("/api/sold-status", async (_req, res) => {
+  if (!soldCompsConfigured()) {
+    res.json({ configured: false });
+    return;
+  }
+  const usage = await getUsage();
+  res.json({
+    configured: true,
+    ok: Boolean(usage),
+    plan: usage?.plan,
+    remaining: usage ? usage.remaining + usage.credits : void 0,
+    limit: usage?.limit,
+    resetAt: usage?.reset_at
+  });
+});
+app.get("/api/rates", async (_req, res) => {
+  res.set("Cache-Control", "public, max-age=3600");
+  const { rates, source } = await getGbpRates();
+  res.json({ base: "GBP", rates, source });
 });
 app.use("/api", emailRouter);
 app.get("/api/health", (req, res) => {
@@ -70433,7 +70639,11 @@ app.get("/api/health", (req, res) => {
     status: "ok",
     timestamp: (/* @__PURE__ */ new Date()).toISOString(),
     // Booleans only: whether each optional service has its settings, never the values.
-    services: { ai: Boolean(aiClient), email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM) }
+    services: {
+      ai: Boolean(aiClient),
+      email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM),
+      ebaySold: soldCompsConfigured()
+    }
   });
 });
 var aiStatusCache = null;

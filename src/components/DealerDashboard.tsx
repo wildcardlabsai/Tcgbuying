@@ -48,6 +48,8 @@ import {
   SubmittedCardItem,
 } from '../services/dealerSubmissionService';
 import PriceGuide from './PriceGuide';
+import SoldPanel from './SoldPanel';
+import { gradeFromCondition } from '../services/soldService';
 import { signOutUser } from '../services/authService';
 import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
@@ -107,6 +109,7 @@ export default function DealerDashboard({
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [editCash, setEditCash] = useState('');
   const [editNote, setEditNote] = useState('');
+  const [soldOpenIdx, setSoldOpenIdx] = useState<number | null>(null);
   const creditRatio = storefront ? storefront.pricing.creditPercent / storefront.pricing.cashPercent : 84 / 72;
 
   // New-submission alerts: toast, tab title badge and (if allowed) a browser notification
@@ -808,6 +811,24 @@ export default function DealerDashboard({
                                         `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(card.name)}`,
                                     }}
                                   />
+                                  <button
+                                    type="button"
+                                    onClick={() => setSoldOpenIdx(soldOpenIdx === cIdx ? null : cIdx)}
+                                    className="mt-1 text-[11px] font-semibold text-blue-300 hover:text-white"
+                                  >
+                                    {soldOpenIdx === cIdx ? 'Hide eBay sold prices' : 'eBay sold prices'}
+                                  </button>
+                                  {soldOpenIdx === cIdx && (
+                                    <SoldPanel
+                                      card={{ name: card.name, cardNumber: card.cardNumber, setName: card.setName }}
+                                      defaultGrade={gradeFromCondition(card.condition)}
+                                      shopCurrency={storefront?.pricing.currency ?? 'GBP'}
+                                      useMedianLabel={`Offer ${storefront?.pricing.cashPercent ?? 72}% of this`}
+                                      onUseMedian={(median) =>
+                                        startEdit(cIdx, r2((median * (storefront?.pricing.cashPercent ?? 72)) / 100), card.dealerNote)
+                                      }
+                                    />
+                                  )}
                                   {card.dealerNote && (
                                     <p className="text-[11px] text-slate-400 italic mt-1">
                                       Staff Note: "{card.dealerNote}"

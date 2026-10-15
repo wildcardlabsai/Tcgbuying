@@ -22,7 +22,6 @@ export interface MatchedCard {
   tcgplayerUrl?: string;
   cardmarketUrl?: string;
   sourceUrl?: string;
-  pricechartingUrl?: string;
   marketPrice: number;
   /** Price provenance, so people can see where a number comes from. */
   priceSource?: string;
@@ -32,7 +31,6 @@ export interface MatchedCard {
   variants?: { key: string; label: string; price: number }[];
   priceVariant?: string;
   cardmarketPrice?: number;
-  pricechartingPrice?: number;
   priceDisagree?: boolean;
   storeCashOffer: number;
   storeCreditOffer: number;

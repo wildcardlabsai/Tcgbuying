@@ -30,7 +30,7 @@ const faqs: FaqItem[] = [
   {
     question: 'How accurate are the prices?',
     answer:
-      'Prices are TCGplayer market prices, which are based on recent TCGplayer sales, with Cardmarket shown as a cross-check and a note when the two disagree. Each price shows its source and when it was last updated, and cards with several printings (holo, reverse holo, 1st edition) let the collector pick the right one. They are not eBay sold prices: eBay only shares sold data with approved partners. PriceCharting can be added if you have a subscription. You choose your percentage and condition adjustments, and you always confirm the final offer after seeing the cards. Graded cards are not auto-priced, so you set those yourself.',
+      'Prices are TCGplayer market prices, which are based on recent TCGplayer sales, with Cardmarket shown as a cross-check and a note when the two disagree. Each price shows its source and when it was last updated, and cards with several printings (holo, reverse holo, 1st edition) let the collector pick the right one. TCGplayer prices are not eBay sold prices, so in the dealer dashboard you can also check what a card (raw or graded) recently sold for on eBay, up to your monthly lookup allowance. You choose your percentage and condition adjustments, and you always confirm the final offer after seeing the cards. Graded cards are not auto-priced, so you set those yourself.',
   },
   {
     question: 'Can I make the page look like my shop?',

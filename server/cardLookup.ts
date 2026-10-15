@@ -38,14 +38,12 @@ export interface CatalogCard {
   priceVariant: string;
   /** Cross-checks from other sources (GBP). */
   cardmarketPrice?: number;
-  pricechartingPrice?: number;
   /** True when TCGplayer and Cardmarket differ a lot, so the dealer should check. */
   priceDisagree?: boolean;
   /** Product page on TCGplayer (direct when the source provides it, otherwise a search for the card). */
   tcgplayerUrl: string;
   /** Cardmarket product page, when the source provides one. */
   cardmarketUrl?: string;
-  pricechartingUrl?: string;
   /** The catalogue page the match came from. */
   sourceUrl?: string;
 }
