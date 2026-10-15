@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { updateSubmissionStatus, getSubmissionByRef, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
+import { Storefront } from '../services/storefrontService';
 import ConditionGuideModal from './ConditionGuideModal';
 
 interface SubmissionTrackerModalProps {
@@ -33,6 +34,8 @@ interface SubmissionTrackerModalProps {
   initialRef?: string;
   submissions: LiveSubmission[];
   dealerId: string | null;
+  shopName?: string;
+  storefront?: Storefront | null;
 }
 
 export default function SubmissionTrackerModal({
@@ -41,6 +44,8 @@ export default function SubmissionTrackerModal({
   initialRef = '',
   submissions,
   dealerId,
+  shopName,
+  storefront,
 }: SubmissionTrackerModalProps) {
   const [searchRef, setSearchRef] = useState(initialRef);
   const [activeSub, setActiveSub] = useState<LiveSubmission | null>(null);
@@ -451,6 +456,8 @@ export default function SubmissionTrackerModal({
         isOpen={showManifestModal}
         onClose={() => setShowManifestModal(false)}
         submission={currentSubmission}
+        shopName={shopName}
+        storefront={storefront}
       />
 
       {/* Condition Guide Modal */}

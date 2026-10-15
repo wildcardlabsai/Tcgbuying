@@ -23,7 +23,8 @@ service cloud.firestore {
       allow update: if isOwner(dealerId) &&
         request.resource.data.ownerUid == resource.data.ownerUid &&
         request.resource.data.name is string && request.resource.data.name.size() <= 100 &&
-        request.resource.data.slug is string && request.resource.data.slug.size() <= 50;
+        request.resource.data.slug is string && request.resource.data.slug.size() <= 50 &&
+        (!('storefront' in request.resource.data) || request.resource.data.storefront is map);
       allow delete: if false;
 
       // Customer submissions. The document id is the unguessable reference

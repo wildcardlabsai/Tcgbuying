@@ -190,11 +190,25 @@ export function recalculateCardValuation(
   };
 }
 
+/** Run `fn` over items with at most `limit` in flight; results keep input order. */
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 /**
  * Downscale a photo (data URL) so requests stay well under Vercel's ~4.5MB body limit
  * and local storage stays small. Non-data URLs and failures return the input unchanged.
  */
-export async function shrinkImage(dataUrl: string, maxSide = 1280, quality = 0.8): Promise<string> {
+export async function shrinkImage(dataUrl: string, maxSide = 1024, quality = 0.75): Promise<string> {
   if (!dataUrl.startsWith('data:image')) return dataUrl;
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -295,34 +309,28 @@ export async function recognizeCardPhoto(
  * Search card database to pick an alternative match
  */
 export async function searchAlternativeCards(queryStr: string, game: string): Promise<MatchedCard[]> {
-  try {
-    const res = await fetch(`/api/search-cards?q=${encodeURIComponent(queryStr)}&game=${encodeURIComponent(game)}`);
-    if (res.ok) {
-      const json = await res.json();
-      if (json.results && Array.isArray(json.results)) {
-        return json.results.map((r: any) => ({
-          id: r.id,
-          name: r.name,
-          game: r.game || game,
-          setName: r.setName || 'Expansion',
-          cardNumber: r.cardNumber || '',
-          rarity: r.rarity || 'Holo Rare',
-          imageUrl: r.imageUrl,
-          marketPrice: r.marketPrice || r.rawMarketPrice || 75,
-          storeCashOffer: Math.round((r.marketPrice || r.rawMarketPrice || 75) * 0.72),
-          storeCreditOffer: Math.round((r.marketPrice || r.rawMarketPrice || 75) * 0.84),
-          ebayLastSoldAvg: r.marketPrice || r.rawMarketPrice || 75,
-          ebayRecentComps: r.ebaySoldComps || [
-            { title: `${r.name} Authentic Market Comp`, price: r.rawMarketPrice || 75, date: 'Recent', condition: 'Raw NM' },
-          ],
-        }));
-      }
-    }
-  } catch (e) {
-    console.warn('Search alternative error:', e);
-  }
-
-  return FALLBACK_CARDS;
+  const q = queryStr.trim();
+  if (!q) return [];
+  const res = await fetch(`/api/search-cards?q=${encodeURIComponent(q)}&game=${encodeURIComponent(game)}`);
+  if (!res.ok) throw new Error('Card search is unavailable right now. Please try again.');
+  const json = await res.json();
+  return (json.results as any[]).map((r) => {
+    const price = Number(r.marketPrice ?? r.rawMarketPrice ?? 0) || 0;
+    return {
+      id: r.id,
+      name: r.name,
+      game: r.game || game,
+      setName: r.setName || '',
+      cardNumber: r.cardNumber || '',
+      rarity: r.rarity || '',
+      imageUrl: r.imageUrl || '',
+      marketPrice: price,
+      storeCashOffer: Math.round(price * 0.72),
+      storeCreditOffer: Math.round(price * 0.84),
+      ebayLastSoldAvg: price,
+      ebayRecentComps: [],
+    };
+  });
 }
 
 /**

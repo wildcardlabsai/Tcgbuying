@@ -7,6 +7,7 @@ import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { emailRouter } from './email';
+import { findBestMatch, searchCards, splitQuery } from './cardLookup';
 
 dotenv.config();
 
@@ -164,92 +165,46 @@ const BENCHMARK_CARDS = [
 ];
 
 /**
- * Free TCG API Search / Fallback
+ * Resolve a detected card against the live catalogues (set + collector number used when known).
+ * Never invents a card: if nothing matches, returns the detected name with no price (rawMarketPrice 0).
  */
-async function fetchCardFromFreeApis(cardName: string, game: string) {
-  try {
-    if (game.toLowerCase().includes('magic') || game.toLowerCase().includes('mtg')) {
-      const res = await fetch(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`);
-      if (res.ok) {
-        const data = await res.json();
-        const priceUsd = Number(data.prices?.usd || data.prices?.usd_foil || 25);
-        return {
-          id: `scryfall-${data.id}`,
-          name: data.name,
-          game: 'Magic: The Gathering',
-          setName: data.set_name,
-          cardNumber: data.collector_number || '',
-          rarity: data.rarity ? data.rarity.charAt(0).toUpperCase() + data.rarity.slice(1) : 'Rare',
-          imageUrl: data.image_uris?.normal || data.image_uris?.large || data.image_uris?.small || '',
-          rawMarketPrice: Math.round(priceUsd * 0.8),
-        };
-      }
-    } else if (game.toLowerCase().includes('yu-gi-oh') || game.toLowerCase().includes('yugioh')) {
-      const res = await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(cardName)}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.data && json.data.length > 0) {
-          const card = json.data[0];
-          const tcgPrice = Number(card.card_prices?.[0]?.tcgplayer_price || 15);
-          return {
-            id: `ygo-${card.id}`,
-            name: card.name,
-            game: 'Yu-Gi-Oh!',
-            setName: card.card_sets?.[0]?.set_name || 'Yu-Gi-Oh! Expansion',
-            cardNumber: card.card_sets?.[0]?.set_code || '',
-            rarity: card.card_sets?.[0]?.set_rarity || 'Ultra Rare',
-            imageUrl: card.card_images?.[0]?.image_url || '',
-            rawMarketPrice: Math.round(tcgPrice * 0.8) || 35,
-          };
-        }
-      }
-    } else {
-      try {
-        const pkmRes = await fetch(`https://api.pokemontcg.io/v2/cards?q=name:"*${encodeURIComponent(cardName.split(' ')[0])}*"&pageSize=3`);
-        if (pkmRes.ok) {
-          const pkmData = await pkmRes.json();
-          if (pkmData.data && pkmData.data.length > 0) {
-            const p = pkmData.data[0];
-            const market = p.tcgplayer?.prices?.holofoil?.market || p.tcgplayer?.prices?.normal?.market || 45;
-            return {
-              id: `pkmn-${p.id}`,
-              name: p.name,
-              game: 'Pokémon',
-              setName: p.set?.name || 'Pokémon Expansion',
-              cardNumber: `${p.number}/${p.set?.printedTotal || 100}`,
-              rarity: p.rarity || 'Holo Rare',
-              imageUrl: p.images?.large || p.images?.small || '',
-              rawMarketPrice: Math.round(market * 0.8),
-            };
-          }
-        }
-      } catch (err) {
-        // Fallback
-      }
-    }
-  } catch (error) {
-    console.warn('Free API fetch note:', error);
-  }
+async function fetchCardFromFreeApis(cardName: string, game: string, setName?: string, cardNumber?: string) {
+  const hit = await findBestMatch(cardName, game, setName, cardNumber);
+  if (hit) return hit;
 
-  const found = BENCHMARK_CARDS.find((c) =>
-    c.name.toLowerCase().includes(cardName.toLowerCase()) ||
-    cardName.toLowerCase().includes(c.name.toLowerCase())
-  );
-
-  if (found) {
-    return found;
-  }
+  const wanted = cardName.toLowerCase();
+  const found = BENCHMARK_CARDS.find((c) => c.name.toLowerCase() === wanted);
+  if (found) return found;
 
   return {
-    id: `card-${Date.now()}`,
+    id: `card-${wanted.replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
     name: cardName,
-    game: game || 'Pokémon',
-    setName: 'Standard Expansion',
-    cardNumber: '01/100',
-    rarity: 'Rare Holo',
-    imageUrl: 'https://images.pokemontcg.io/swsh12pt5/160_hires.png',
-    rawMarketPrice: 65,
+    game: game || 'Other',
+    setName: setName || '',
+    cardNumber: cardNumber || '',
+    rarity: '',
+    imageUrl: '',
+    rawMarketPrice: 0,
+    priceKnown: false,
   };
+}
+
+const FAST_GEN_CONFIG = { temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } };
+
+/** Call Gemini with a fast JSON config, falling back to a plain config and a known-good model. */
+async function generateWithFallback(params: { contents: any }) {
+  const models = [...new Set([GEMINI_MODEL, 'gemini-2.5-flash'])];
+  let lastErr: unknown;
+  for (const model of models) {
+    for (const config of [FAST_GEN_CONFIG, undefined]) {
+      try {
+        return await aiClient!.models.generateContent({ model, contents: params.contents, config });
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -329,11 +284,11 @@ app.post('/api/recognize-card', async (req: Request, res: Response): Promise<voi
     const resolved = await resolveImageBase64(imageBase64, mimeType);
 
     // Initial detection defaults
-    let detectedName = userHint || 'Charizard';
+    let detectedName = userHint || '';
     let detectedGame = 'Pokémon';
-    let detectedSet = 'Base Set';
-    let detectedNumber = '4/102';
-    let detectedRarity = 'Holo Rare';
+    let detectedSet = '';
+    let detectedNumber = '';
+    let detectedRarity = '';
     let detectedCondition = 'Near Mint';
     let isGraded = false;
     let confidence = 0.94;
@@ -356,6 +311,7 @@ app.post('/api/recognize-card', async (req: Request, res: Response): Promise<voi
     if (aiClient && resolved.base64 && resolved.base64.length > 50) {
       try {
         const prompt = `Analyze this collectible trading card photograph carefully.
+Read the printed card name and the collector number printed on the card (usually bottom corner) EXACTLY as written; never guess a different card. If a field is not visible, return an empty string for it.
 Identify:
 1. Exact card name (e.g. "Charizard", "Pikachu Illustrator", "Black Lotus", "Blue-Eyes White Dragon", "Umbreon VMAX").
 2. Game category: choose exactly one ("Pokémon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", "Lorcana", "Other").
@@ -379,8 +335,7 @@ Format your response as valid JSON ONLY without markdown backticks:
   "notes": "..."
 }`;
 
-        const response = await aiClient.models.generateContent({
-          model: GEMINI_MODEL,
+        const response = await generateWithFallback({
           contents: [
             {
               role: 'user',
@@ -426,9 +381,14 @@ Format your response as valid JSON ONLY without markdown backticks:
       return;
     }
 
-    const matchedData = await fetchCardFromFreeApis(detectedName, detectedGame);
+    if (!detectedName.trim()) {
+      res.status(422).json({ success: false, error: 'card_not_identified' });
+      return;
+    }
 
-    const basePrice = (matchedData as any).rawMarketPrice || 65;
+    const matchedData = await fetchCardFromFreeApis(detectedName, detectedGame, detectedSet, detectedNumber);
+
+    const basePrice = (matchedData as any).rawMarketPrice ?? 0;
     const finalMarketPrice = isGraded ? Math.round(basePrice * 3.5) : basePrice;
 
     const storeCashOffer = Math.round(finalMarketPrice * 0.72);
@@ -521,8 +481,7 @@ Return valid JSON ONLY without markdown backticks:
   ]
 }`;
 
-        const response = await aiClient.models.generateContent({
-          model: GEMINI_MODEL,
+        const response = await generateWithFallback({
           contents: [
             {
               role: 'user',
@@ -605,8 +564,8 @@ Return valid JSON ONLY without markdown backticks:
     // Resolve each card against free TCG APIs
     const cardsWithPricing = await Promise.all(
       detectedCards.map(async (dc) => {
-        const matched = await fetchCardFromFreeApis(dc.name, dc.game);
-        const basePrice = (matched as any).rawMarketPrice || 50;
+        const matched = await fetchCardFromFreeApis(dc.name, dc.game, dc.set, dc.number);
+        const basePrice = (matched as any).rawMarketPrice ?? 0;
         const storeCashOffer = Math.round(basePrice * 0.72);
         const storeCreditOffer = Math.round(basePrice * 0.84);
 
@@ -704,7 +663,7 @@ app.post('/api/parse-buylist', async (req: Request, res: Response): Promise<void
 
       const matched = await fetchCardFromFreeApis(cleanName || cardQuery, defaultGame);
       const isGraded = condition.includes('PSA');
-      const basePrice = (matched as any).rawMarketPrice || 50;
+      const basePrice = (matched as any).rawMarketPrice ?? 0;
       const finalPrice = isGraded ? Math.round(basePrice * (condition.includes('10') ? 3.8 : 2.2)) : basePrice;
 
       const storeCashOffer = Math.round(finalPrice * 0.72);
@@ -745,29 +704,20 @@ app.post('/api/parse-buylist', async (req: Request, res: Response): Promise<void
  * Search card database
  */
 app.get('/api/search-cards', async (req: Request, res: Response) => {
-  const queryStr = (req.query.q as string) || '';
-  const game = (req.query.game as string) || 'Pokémon';
+  const raw = String(req.query.q || '').slice(0, 100).trim();
+  const game = String(req.query.game || 'any');
 
-  if (!queryStr) {
-    res.json({ results: BENCHMARK_CARDS });
+  if (!raw) {
+    res.json({ results: [] });
     return;
   }
 
-  const filtered = BENCHMARK_CARDS.filter((c) =>
-    c.name.toLowerCase().includes(queryStr.toLowerCase()) ||
-    c.setName.toLowerCase().includes(queryStr.toLowerCase())
-  );
-
-  if (filtered.length > 0) {
-    res.json({ results: filtered });
-    return;
-  }
-
-  const fetched = await fetchCardFromFreeApis(queryStr, game);
-  res.json({ results: [fetched] });
+  const { name, number } = splitQuery(raw);
+  const results = await searchCards({ q: name, game, number, limit: 10 });
+  res.json({
+    results: results.map((c) => ({ ...c, marketPrice: c.rawMarketPrice })),
+  });
 });
-
-app.use('/api', emailRouter);
 
 /**
  * Health check

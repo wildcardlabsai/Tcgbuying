@@ -10,6 +10,7 @@ import {
   Layers,
   TrendingUp,
   Settings,
+  Palette,
   Search,
   CheckCircle2,
   Clock,
@@ -46,6 +47,9 @@ import { estimateCardPricing } from '../services/marketPricingService';
 import { signOutDealer } from '../services/authService';
 import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
+import StorefrontEditor from './StorefrontEditor';
+import { Storefront } from '../services/storefrontService';
+import { IS_LOCAL } from '../config';
 import ConditionGuideModal from './ConditionGuideModal';
 
 interface DealerDashboardProps {
@@ -55,6 +59,8 @@ interface DealerDashboardProps {
   dealerId: string;
   dealerSlug: string;
   userEmail: string;
+  storefront: Storefront | null;
+  onStorefrontSaved: (s: Storefront) => void;
 }
 
 export default function DealerDashboard({
@@ -64,8 +70,10 @@ export default function DealerDashboard({
   dealerId,
   dealerSlug,
   userEmail,
+  storefront,
+  onStorefrontSaved,
 }: DealerDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'submissions' | 'card_vault' | 'comps' | 'settings'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'card_vault' | 'comps' | 'settings' | 'storefront'>('submissions');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'review' | 'sent' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [submissions, setSubmissions] = useState<LiveSubmission[]>([]);
@@ -205,7 +213,7 @@ export default function DealerDashboard({
         <div className="flex items-center gap-3">
           <div className="hidden lg:flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>Firestore Live Sync Active</span>
+            <span>{IS_LOCAL ? "Local demo data" : "Live sync active"}</span>
           </div>
 
           <button
@@ -321,6 +329,18 @@ export default function DealerDashboard({
               </button>
 
               <button
+                onClick={() => setActiveTab('storefront')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'storefront'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
+                }`}
+              >
+                <Palette className="w-4 h-4" />
+                <span>My Buying Page</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('settings')}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'settings'
@@ -336,8 +356,8 @@ export default function DealerDashboard({
 
           {/* Footer info in sidebar */}
           <div className="text-[10px] text-slate-500 border-t border-slate-800/80 pt-3">
-            <p className="font-semibold text-slate-400">TCGBuyer Enterprise v2.4</p>
-            <p>Database: Firestore Production</p>
+            <p className="font-semibold text-slate-400">TCGBuyer</p>
+            <p>{IS_LOCAL ? 'Data: stored in this browser (demo)' : 'Data: Firestore'}</p>
           </div>
         </aside>
 
@@ -871,6 +891,15 @@ export default function DealerDashboard({
           )}
 
           {/* TAB 4: STORE SETTINGS & BUYLIST MARGINS */}
+          {activeTab === 'storefront' && (
+            <StorefrontEditor
+              dealerId={dealerId}
+              shopName={shopName}
+              onSaved={onStorefrontSaved}
+              onPreview={onOpenCustomerPortal}
+            />
+          )}
+
           {activeTab === 'settings' && (
             <div className="space-y-6 max-w-3xl">
               <div className="border-b border-slate-800 pb-4">
@@ -999,6 +1028,7 @@ export default function DealerDashboard({
       <PrintableManifestModal
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
+        storefront={storefront}
         submission={selectedSubmission}
         shopName={shopName}
       />

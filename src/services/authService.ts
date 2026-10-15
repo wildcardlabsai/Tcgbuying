@@ -17,11 +17,14 @@ import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
 import { IS_LOCAL, LOGIN_BYPASS } from '../config';
 import { randomId, readJson, sha256, writeJson } from './localStore';
+import { Storefront, getStorefront, sanitizeStorefront } from './storefrontService';
 
 export interface DealerProfile {
   id: string;
   name: string;
   slug: string;
+  /** Public page customisation; only populated when loading a shop by slug. */
+  storefront?: Storefront;
 }
 
 /** Shop used by the dashboard while login is bypassed. */
@@ -149,13 +152,16 @@ export async function ensureDealerProfile(user: User, shopName?: string): Promis
 }
 
 export async function getDealerBySlug(slug: string): Promise<DealerProfile | null> {
-  if (LOGIN_BYPASS && slug === DEMO_DEALER.slug) return DEMO_DEALER;
-  if (IS_LOCAL) return readJson<DealerProfile[]>(DEALERS_KEY, []).find((d) => d.slug === slug) ?? null;
+  if (LOGIN_BYPASS && slug === DEMO_DEALER.slug) return { ...DEMO_DEALER, storefront: await getStorefront(DEMO_DEALER.id) };
+  if (IS_LOCAL) {
+    const d = readJson<DealerProfile[]>(DEALERS_KEY, []).find((x) => x.slug === slug);
+    return d ? { id: d.id, name: d.name, slug: d.slug, storefront: await getStorefront(d.id) } : null;
+  }
   try {
     const snap = await getDocs(query(collection(db, 'dealers'), where('slug', '==', slug), limit(1)));
     if (snap.empty) return null;
     const d = snap.docs[0];
-    return { id: d.id, name: d.data().name, slug: d.data().slug };
+    return { id: d.id, name: d.data().name, slug: d.data().slug, storefront: sanitizeStorefront(d.data().storefront) };
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, 'dealers');
     return null;

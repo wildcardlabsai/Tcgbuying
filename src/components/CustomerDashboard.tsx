@@ -44,11 +44,14 @@ import {
   parseBuylistTextOrCsv,
   recalculateCardValuation,
   searchAlternativeCards,
+  mapWithConcurrency,
   RecognizedCardItem,
   MatchedCard,
 } from '../services/cardRecognitionService';
 import { createCustomerSubmission, SubmittedCardItem, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
+import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
+import { Storefront } from '../services/storefrontService';
 import ConditionGuideModal from './ConditionGuideModal';
 
 interface CustomerDashboardProps {
@@ -57,6 +60,7 @@ interface CustomerDashboardProps {
   onTrackSubmission: (ref: string) => void;
   shopName?: string;
   dealerId: string | null;
+  storefront?: Storefront | null;
 }
 
 // Preset card samples for 1-click testing
@@ -115,6 +119,7 @@ export default function CustomerDashboard({
   onTrackSubmission,
   shopName = 'The Card Vault',
   dealerId,
+  storefront,
 }: CustomerDashboardProps) {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [intakeMode, setIntakeMode] = useState<'photos' | 'rapid_camera' | 'text_csv' | 'bulk_counter'>('photos');
@@ -150,6 +155,10 @@ export default function CustomerDashboard({
   const [searchModalCardIndex, setSearchModalCardIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MatchedCard[]>([]);
+  const [searchGame, setSearchGame] = useState('any');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchedOnce, setSearchedOnce] = useState(false);
 
   // Expanded photo preview modal
   const [expandedPhoto, setExpandedPhoto] = useState<string | null>(null);
@@ -262,22 +271,23 @@ export default function CustomerDashboard({
       text: `Processing ${rapidFireCaptured.length} rapid camera captures...`,
     });
 
-    const newItems: RecognizedCardItem[] = [];
-
-    for (let i = 0; i < rapidFireCaptured.length; i++) {
-      const photo = rapidFireCaptured[i];
-      setScanProgress({
-        current: i + 1,
-        total: rapidFireCaptured.length,
-        text: `Recognizing rapid card ${i + 1} of ${rapidFireCaptured.length}...`,
-      });
-
+    let done = 0;
+    const results = await mapWithConcurrency(rapidFireCaptured, 4, async (photo, i) => {
       try {
-        newItems.push(await recognizeCardPhoto(photo, `Rapid Card #${i + 1}.jpg`));
+        return await recognizeCardPhoto(photo, `Rapid Card #${i + 1}.jpg`);
       } catch (err) {
         alert(`Card ${i + 1}: ${(err as Error).message}`);
+        return null;
+      } finally {
+        done++;
+        setScanProgress({
+          current: done,
+          total: rapidFireCaptured.length,
+          text: `Recognizing rapid card ${done} of ${rapidFireCaptured.length}...`,
+        });
       }
-    }
+    });
+    const newItems = results.filter((r): r is RecognizedCardItem => r !== null);
 
     setCardItems((prev) => [...prev, ...newItems]);
     setIsScanning(false);
@@ -299,32 +309,28 @@ export default function CustomerDashboard({
         : 'Preparing photos for AI vision scan...',
     });
 
-    const newItems: RecognizedCardItem[] = [];
-
-    for (let i = 0; i < fileArray.length; i++) {
-      const file = fileArray[i];
-      const base64 = await readFileAsBase64(file);
-
+    let done = 0;
+    const results = await mapWithConcurrency(fileArray, 4, async (file) => {
       try {
-        if (isBinderMode) {
-          setScanProgress({
-            current: i + 1,
-            total: fileArray.length,
-            text: `Analyzing binder page ${i + 1} with AI vision: detecting all cards...`,
-          });
-          newItems.push(...(await scanMultiCardBinderPhoto(base64, file.name)));
-        } else {
-          setScanProgress({
-            current: i + 1,
-            total: fileArray.length,
-            text: `Recognizing card ${i + 1} of ${fileArray.length}: ${file.name}...`,
-          });
-          newItems.push(await recognizeCardPhoto(base64, file.name));
-        }
+        const base64 = await readFileAsBase64(file);
+        return isBinderMode
+          ? await scanMultiCardBinderPhoto(base64, file.name)
+          : [await recognizeCardPhoto(base64, file.name)];
       } catch (err) {
         alert(`${file.name}: ${(err as Error).message}`);
+        return [] as RecognizedCardItem[];
+      } finally {
+        done++;
+        setScanProgress({
+          current: done,
+          total: fileArray.length,
+          text: isBinderMode
+            ? `Analyzed ${done} of ${fileArray.length} binder pages...`
+            : `Recognized ${done} of ${fileArray.length} cards...`,
+        });
       }
-    }
+    });
+    const newItems = results.flat();
 
     setCardItems((prev) => [...prev, ...newItems]);
     setIsScanning(false);
@@ -450,12 +456,27 @@ export default function CustomerDashboard({
   };
 
   // Open alternative match search modal
+  const runAlternativeSearch = async (q: string, game: string) => {
+    setIsSearching(true);
+    setSearchError(null);
+    try {
+      setSearchResults(await searchAlternativeCards(q, game));
+    } catch (err) {
+      setSearchResults([]);
+      setSearchError((err as Error).message);
+    }
+    setSearchedOnce(true);
+    setIsSearching(false);
+  };
+
   const openSearchModal = (index: number) => {
+    const card = cardItems[index].matchedCard;
     setSearchModalCardIndex(index);
-    setSearchQuery(cardItems[index].matchedCard.name);
-    searchAlternativeCards(cardItems[index].matchedCard.name, cardItems[index].matchedCard.game).then(
-      (res) => setSearchResults(res)
-    );
+    setSearchQuery(card.name);
+    setSearchResults([]);
+    setSearchedOnce(false);
+    setSearchGame(card.game || 'any');
+    runAlternativeSearch(card.name, card.game || 'any');
   };
 
   const handleSelectAlternative = (card: MatchedCard) => {
@@ -615,7 +636,11 @@ export default function CustomerDashboard({
           </button>
           <div className="h-4 w-[1px] bg-slate-800" />
           <div className="flex items-center gap-2.5">
-            <Logo size="sm" variant="light" />
+            {storefront?.logoUrl ? (
+              <img src={storefront.logoUrl} alt={`${shopName} logo`} className="h-7 max-w-[120px] object-contain" />
+            ) : (
+              <Logo size="sm" variant="light" />
+            )}
             <span className="text-slate-400 text-xs hidden sm:inline">|</span>
             <span className="font-bold text-sm tracking-wide text-white uppercase flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -645,6 +670,8 @@ export default function CustomerDashboard({
       {/* Main Container */}
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6 lg:p-8">
         
+        {currentStep === 1 && <StorefrontBanner storefront={storefront} shopName={shopName} />}
+
         {/* Step Progress Bar */}
         <div className="mb-8">
           <div className="grid grid-cols-4 gap-2 sm:gap-4 max-w-3xl mx-auto">
@@ -1877,6 +1904,7 @@ export default function CustomerDashboard({
           </div>
         )}
 
+        <StorefrontContact storefront={storefront} />
       </main>
 
       {/* SEARCH ALTERNATIVE MODAL */}
@@ -1893,19 +1921,40 @@ export default function CustomerDashboard({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="e.g. Charizard, Black Lotus, Blue-Eyes..."
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    runAlternativeSearch(searchQuery, searchGame);
+                  }
+                }}
+                placeholder="e.g. Charizard 4/102, Black Lotus, Dark Magician..."
+                className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
               />
+              <select
+                value={searchGame}
+                onChange={(e) => setSearchGame(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white"
+                aria-label="Game"
+              >
+                <option value="any">All games</option>
+                <option value="Pokémon">Pokémon</option>
+                <option value="Magic: The Gathering">Magic</option>
+                <option value="Yu-Gi-Oh!">Yu-Gi-Oh!</option>
+              </select>
               <button
                 type="button"
-                onClick={() =>
-                  searchAlternativeCards(searchQuery, 'Pokémon').then((res) => setSearchResults(res))
-                }
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg"
+                disabled={isSearching}
+                onClick={() => runAlternativeSearch(searchQuery, searchGame)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-semibold rounded-lg"
               >
-                Search
+                {isSearching ? 'Searching…' : 'Search'}
               </button>
             </div>
+
+            {searchError && <p className="text-xs text-red-400 mb-2">{searchError}</p>}
+            {!isSearching && !searchError && searchedOnce && searchResults.length === 0 && (
+              <p className="text-xs text-slate-400 mb-2">No matches found. Try the card name only, or another game.</p>
+            )}
 
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
               {searchResults.map((card) => (
@@ -1914,14 +1963,18 @@ export default function CustomerDashboard({
                   onClick={() => handleSelectAlternative(card)}
                   className="flex items-center gap-3 p-2 rounded-lg bg-slate-800/80 hover:bg-slate-750 cursor-pointer border border-slate-700 transition-colors"
                 >
-                  <img src={card.imageUrl} alt={card.name} className="w-10 h-14 object-cover rounded" />
+                  {card.imageUrl ? (
+                    <img src={card.imageUrl} alt={card.name} className="w-10 h-14 object-cover rounded" />
+                  ) : (
+                    <div className="w-10 h-14 rounded bg-slate-700" />
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-bold text-white truncate">{card.name}</p>
                     <p className="text-[10px] text-slate-400">
                       {card.game} • {card.setName} • #{card.cardNumber}
                     </p>
                     <p className="text-[10px] text-emerald-400 font-semibold">
-                      Comp: £{card.marketPrice} (Cash £{card.storeCashOffer})
+                      {card.marketPrice > 0 ? `Est. £${card.marketPrice} (Cash £${card.storeCashOffer})` : 'No price available'}
                     </p>
                   </div>
                   <span className="text-xs text-blue-400 font-semibold">Select</span>
@@ -1960,9 +2013,10 @@ export default function CustomerDashboard({
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
         shopName={shopName}
+        storefront={storefront}
         submission={{
           ref: submittedRef || '',
-          date: 'Today',
+          date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
           collection: `TCG Collection (${cardItems.length} cards)`,
           cards: cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares,
           estValue: `£${(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer).toLocaleString()}`,

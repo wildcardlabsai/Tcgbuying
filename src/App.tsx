@@ -28,6 +28,7 @@ import LegalModal, { LegalDoc } from './components/LegalModal';
 import DealerAuthScreen from './components/DealerAuthScreen';
 import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
 import { LOGIN_BYPASS } from './config';
+import { Storefront, getStorefront } from './services/storefrontService';
 import { subscribeToAuth, getDealerBySlug, DealerProfile, DEMO_DEALER } from './services/authService';
 
 const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
@@ -80,6 +81,13 @@ function AppInner() {
   // While login is bypassed, the dashboard falls back to a demo shop
   const activeDealer = dealer ?? (LOGIN_BYPASS ? DEMO_DEALER : null);
 
+  // The signed-in (or demo) dealer's own page settings, for previewing and for packing slips
+  const [ownStorefront, setOwnStorefront] = useState<Storefront | null>(null);
+  useEffect(() => {
+    setOwnStorefront(null);
+    if (activeDealer) getStorefront(activeDealer.id).then(setOwnStorefront);
+  }, [activeDealer?.id]);
+
   // After onboarding (sign-up), go straight to the dashboard
   useEffect(() => {
     if (currentView === 'dealer_signup' && dealer) setCurrentView('dealer_dashboard');
@@ -93,6 +101,7 @@ function AppInner() {
 
   // Portal/tracker target: the linked shop, otherwise the signed-in dealer previewing their own portal
   const portalDealer = linkedShop || activeDealer;
+  const portalStorefront = linkedShop ? (linkedShop.storefront ?? null) : ownStorefront;
 
   const scrollToFeatures = () => {
     const el = document.getElementById('features');
@@ -110,6 +119,7 @@ function AppInner() {
       <>
         <CustomerDashboard
           dealerId={portalDealer?.id ?? null}
+          storefront={portalStorefront}
           onBackToHome={() => setCurrentView('landing')}
           onOpenDealerDashboard={() => setCurrentView('dealer_dashboard')}
           onTrackSubmission={(ref) => {
@@ -124,6 +134,8 @@ function AppInner() {
           initialRef={trackerRef}
           submissions={linkedShop ? [] : submissionsList}
           dealerId={portalDealer?.id ?? null}
+          shopName={portalDealer?.name}
+          storefront={portalStorefront}
         />
       </>
     );
@@ -146,6 +158,8 @@ function AppInner() {
           dealerId={activeDealer.id}
           dealerSlug={activeDealer.slug}
           userEmail={dealer ? userEmail : 'Demo mode (login off)'}
+          storefront={ownStorefront}
+          onStorefrontSaved={setOwnStorefront}
         />
         <SubmissionTrackerModal
           isOpen={isTrackerOpen}
@@ -153,6 +167,8 @@ function AppInner() {
           initialRef={trackerRef}
           submissions={submissionsList}
           dealerId={activeDealer.id}
+          shopName={activeDealer.name}
+          storefront={ownStorefront}
         />
       </>
     );

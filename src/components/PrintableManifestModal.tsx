@@ -3,15 +3,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import QRCode from 'qrcode';
 import { X, Printer, Package, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import Logo from './Logo';
 import { LiveSubmission } from '../services/dealerSubmissionService';
+import { Storefront } from '../services/storefrontService';
 
 interface PrintableManifestModalProps {
   isOpen: boolean;
   onClose: () => void;
   submission: LiveSubmission | null;
   shopName?: string;
+  storefront?: Storefront | null;
 }
 
 export default function PrintableManifestModal({
@@ -19,7 +24,16 @@ export default function PrintableManifestModal({
   onClose,
   submission,
   shopName = 'The Card Vault',
+  storefront,
 }: PrintableManifestModalProps) {
+  const [qr, setQr] = useState('');
+  const ref = submission?.ref;
+
+  useEffect(() => {
+    if (!isOpen || !ref) return;
+    QRCode.toDataURL(ref, { margin: 1, width: 160 }).then(setQr).catch(() => setQr(''));
+  }, [isOpen, ref]);
+
   if (!isOpen || !submission) return null;
 
   const handlePrint = () => {
@@ -29,8 +43,9 @@ export default function PrintableManifestModal({
   const totalMarket = (submission.items || []).reduce((acc, c) => acc + (c.marketPrice || 0), 0);
   const totalOffer = submission.offeredAmount || (submission.totalCashOffer ? `£${submission.totalCashOffer}` : submission.estValue);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white animate-in fade-in">
+  // Rendered into <body> so print CSS can hide the rest of the app and print only this document.
+  return createPortal(
+    <div id="print-portal"><div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white animate-in fade-in">
       <div className="bg-white text-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full my-auto overflow-hidden border border-slate-200 print:border-none print:shadow-none print:max-w-none print:w-full">
         
         {/* On-Screen Action Bar (Hidden during print) */}
@@ -74,7 +89,7 @@ export default function PrintableManifestModal({
               </div>
               <h1 className="text-2xl font-black text-slate-950">{shopName}</h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Trading Card Game Buylist Department • Licensed TCG Specialist
+                {storefront?.tagline || 'Trading card buylist'}
               </p>
             </div>
 
@@ -92,34 +107,17 @@ export default function PrintableManifestModal({
           {/* Quick Check-in QR & Barcode Section */}
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              {/* Synthetic Visual QR Code */}
-              <div className="w-20 h-20 bg-white p-1.5 rounded-lg border border-slate-300 shrink-0 flex items-center justify-center shadow-xs">
-                <div className="w-full h-full border-2 border-slate-900 p-1 flex flex-col justify-between">
-                  <div className="flex justify-between">
-                    <div className="w-3.5 h-3.5 bg-slate-950" />
-                    <div className="w-3.5 h-3.5 bg-slate-950" />
-                  </div>
-                  <div className="flex items-center justify-center font-mono text-[8px] font-bold text-slate-900">
-                    SCAN
-                  </div>
-                  <div className="flex justify-between">
-                    <div className="w-3.5 h-3.5 bg-slate-950" />
-                    <div className="w-2 h-2 bg-slate-950" />
-                  </div>
-                </div>
+              <div className="w-20 h-20 bg-white p-1 rounded-lg border border-slate-300 shrink-0 flex items-center justify-center">
+                {qr ? <img src={qr} alt={`QR code for ${submission.ref}`} className="w-full h-full" /> : null}
               </div>
 
               <div>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 block">
-                  Automated Warehouse / Counter Scan
+                  Quick Check-in
                 </span>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Dealer staff: Scan this QR code or enter <strong className="text-slate-900">{submission.ref}</strong> into the intake terminal to pull up submission cards.
+                  Shop staff: scan this QR code or search for <strong className="text-slate-900">{submission.ref}</strong> in the dashboard to pull up this submission.
                 </p>
-                <div className="flex items-center gap-2 mt-2 text-[11px] text-emerald-700 font-semibold">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>Insured Package Tracking Active</span>
-                </div>
               </div>
             </div>
 
@@ -147,9 +145,15 @@ export default function PrintableManifestModal({
               <span className="font-bold text-slate-400 uppercase text-[10px] tracking-wider block">
                 Destination Shop Address
               </span>
-              <p className="font-bold text-slate-900 text-sm">{shopName} Buylist Vault</p>
-              <p className="text-slate-600">Unit 4, High Street Retail Arcade</p>
-              <p className="text-slate-600">London, United Kingdom • Ref: {submission.ref}</p>
+              <p className="font-bold text-slate-900 text-sm">{shopName}</p>
+              {storefront?.address ? (
+                <p className="text-slate-600 whitespace-pre-line">{storefront.address}</p>
+              ) : (
+                <p className="text-slate-500 italic">Ask {shopName} for their postal address.</p>
+              )}
+              <p className="text-slate-600">Ref: {submission.ref}</p>
+              {storefront?.contactPhone && <p className="text-slate-600">Tel: {storefront.contactPhone}</p>}
+              {storefront?.contactEmail && <p className="text-slate-600">{storefront.contactEmail}</p>}
             </div>
           </div>
 
@@ -160,7 +164,7 @@ export default function PrintableManifestModal({
                 Itemized Cards Manifest ({submission.items?.length || 0} cards)
               </span>
               <span className="text-xs text-slate-500">
-                Verified against official TCG database
+                Estimates; final offer after inspection
               </span>
             </div>
 
@@ -217,19 +221,20 @@ export default function PrintableManifestModal({
               <li>Place cards inside protective penny sleeves and top loaders or semi-rigid holders.</li>
               <li>Sandwich cards between two pieces of rigid cardboard and seal with painter's tape.</li>
               <li>Include this printed slip inside the parcel so our intake team can verify your collection immediately upon arrival.</li>
-              <li>Affix your tracked prepaid mailing label to the outside of the bubble mailer.</li>
+              <li>Use a tracked, insured service and attach the shipping label to the outside of the package.</li>
             </ol>
           </div>
 
           {/* Footer Sign-off */}
           <div className="pt-4 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-400">
-            <span>TCGBuyer Certified Buylist Platform</span>
+            <span>Powered by TCGBuyer</span>
             <span>Generated on {new Date().toLocaleDateString()}</span>
           </div>
 
         </div>
 
       </div>
-    </div>
+    </div></div>,
+    document.body
   );
 }

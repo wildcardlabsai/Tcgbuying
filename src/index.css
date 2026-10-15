@@ -42,19 +42,32 @@
   animation-play-state: paused;
 }
 
-/* Print Styles for Packing Slip & Manifest */
+/* Print Styles for Packing Slip & Manifest: print only the portal-rendered document */
 @media print {
+  body > #root {
+    display: none !important;
+  }
   body {
     background: white !important;
     color: black !important;
   }
-  header, nav, footer, button {
-    display: none !important;
+  #print-portal,
+  #print-portal > div {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    background: white !important;
+    backdrop-filter: none !important;
   }
   #printable-manifest {
-    display: block !important;
-    width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #print-portal tr,
+  #print-portal section {
+    break-inside: avoid;
   }
 }
