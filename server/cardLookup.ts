@@ -46,13 +46,13 @@ export function normaliseGame(game?: string): GameKey {
 const cache = new Map<string, { at: number; value: unknown }>();
 const CACHE_MS = 15 * 60_000;
 
-async function getJson(url: string): Promise<any | null> {
+async function getJson(url: string, extraHeaders: Record<string, string> = {}): Promise<any | null> {
   const hit = cache.get(url);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { Accept: 'application/json', 'User-Agent': UA },
+      headers: { Accept: 'application/json', 'User-Agent': UA, ...extraHeaders },
     });
     if (!res.ok) return null;
     const value = await res.json();
@@ -81,6 +81,8 @@ export interface SearchOpts {
   set?: string;
   number?: string;
   limit?: number;
+  /** Tolerate OCR typos: match on a name prefix instead of the full name. */
+  fuzzy?: boolean;
 }
 
 /** Pull "4/102" or "#4" style collector numbers out of a free-text query. */
@@ -91,10 +93,22 @@ export function splitQuery(q: string): { name: string; number?: string } {
 }
 
 // ---------- Pokémon ----------
-async function searchPokemon(o: SearchOpts, exactName: boolean): Promise<CatalogCard[]> {
+const pokemonKeyHeader = (): Record<string, string> =>
+  process.env.POKEMONTCG_API_KEY ? { 'X-Api-Key': process.env.POKEMONTCG_API_KEY } : {};
+
+/** Name pattern for pokemontcg.io: exact, "starts with", or (for OCR) a shortened prefix to tolerate typos. */
+function pokemonNameClause(o: SearchOpts, exactName: boolean): string {
+  if (o.fuzzy) {
+    const prefix = esc(o.q).slice(0, Math.max(4, esc(o.q).length - 2));
+    return `name:"${prefix}*"`;
+  }
+  return `name:"${esc(o.q)}${exactName ? '' : '*'}"`;
+}
+
+async function searchPokemonTcgApi(o: SearchOpts, exactName: boolean): Promise<CatalogCard[]> {
   const number = o.number?.split('/')[0].replace(/^0+(?=\d)/, '');
   const build = (withSet: boolean, withNumber: boolean) => {
-    const parts = [`name:"${esc(o.q)}${exactName ? '' : '*'}"`];
+    const parts = [pokemonNameClause(o, exactName)];
     if (withNumber && number) parts.push(`number:"${esc(number)}"`);
     if (withSet && o.set) parts.push(`set.name:"${esc(o.set)}"`);
     return parts.join(' ');
@@ -111,11 +125,56 @@ async function searchPokemon(o: SearchOpts, exactName: boolean): Promise<Catalog
       (o.limit ?? 8) +
       '&select=id,name,number,rarity,set,images,tcgplayer,cardmarket&orderBy=-set.releaseDate&q=' +
       encodeURIComponent(key);
-    const json = await getJson(url);
+    const json = await getJson(url, pokemonKeyHeader());
+    if (json === null) return []; // timed out or errored: stop here rather than waiting on three more attempts
     const rows: any[] = json?.data || [];
     if (rows.length) return rows.map(mapPokemon);
   }
   return [];
+}
+
+/** Second Pokémon source (TCGdex): fast, no key. Used when pokemontcg.io is slow or down. */
+async function searchTcgdex(o: SearchOpts): Promise<CatalogCard[]> {
+  const number = o.number?.split('/')[0].replace(/^0+(?=\d)/, '');
+  const name = o.fuzzy ? o.q.slice(0, Math.max(4, o.q.length - 2)) : o.q;
+  const params = new URLSearchParams({ name });
+  if (number) params.set('localId', number);
+  const list = await getJson(`https://api.tcgdex.net/v2/en/cards?${params.toString()}`);
+  if (!Array.isArray(list) || list.length === 0) return [];
+  const details = await Promise.all(
+    list.slice(0, o.limit ?? 6).map((r: any) => getJson(`https://api.tcgdex.net/v2/en/cards/${encodeURIComponent(r.id)}`))
+  );
+  return details
+    .filter(Boolean)
+    .map((d: any): CatalogCard => {
+      const tp = d.pricing?.tcgplayer || {};
+      const variant = tp.holofoil || tp.normal || tp.reverseHolofoil || Object.values(tp).find((v: any) => v && typeof v === 'object');
+      const price =
+        money((variant as any)?.marketPrice ?? (variant as any)?.midPrice, USD_GBP) ||
+        money(d.pricing?.cardmarket?.avg ?? d.pricing?.cardmarket?.trend, EUR_GBP);
+      return {
+        id: `tcgdex-${d.id}`,
+        name: d.name,
+        game: 'Pokémon',
+        setName: d.set?.name || '',
+        cardNumber: d.set?.cardCount?.official ? `${d.localId}/${d.set.cardCount.official}` : String(d.localId || ''),
+        rarity: d.rarity || '',
+        imageUrl: d.image ? `${d.image}/high.webp` : '',
+        rawMarketPrice: price,
+        priceKnown: price > 0,
+        tcgplayerUrl: tcgplayerSearch('pokemon', `${d.name} ${d.localId || ''}`.trim()),
+        sourceUrl: `https://www.tcgdex.net/cards/en/${encodeURIComponent(d.id)}`,
+      };
+    });
+}
+
+/** Both sources in parallel; pokemontcg.io wins when it answers (it carries TCGplayer links and prices). */
+async function searchPokemon(o: SearchOpts, exactName: boolean): Promise<CatalogCard[]> {
+  const [primary, fallback] = await Promise.all([
+    searchPokemonTcgApi(o, exactName).catch(() => [] as CatalogCard[]),
+    searchTcgdex(o).catch(() => [] as CatalogCard[]),
+  ]);
+  return primary.length ? primary : fallback;
 }
 
 function mapPokemon(p: any): CatalogCard {
@@ -207,12 +266,24 @@ async function searchYgo(o: SearchOpts, exactName: boolean): Promise<CatalogCard
   return out;
 }
 
+/** Edit-distance similarity from 0 to 1; lets slightly misread OCR names still rank sensibly. */
+function similarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return 1 - dp[a.length][b.length] / Math.max(a.length, b.length);
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 function score(c: CatalogCard, o: SearchOpts): number {
   let s = 0;
   const want = norm(o.q);
   const got = norm(c.name);
+  s += similarity(got, want) * 4;
   if (got === want) s += 10;
   else if (got.startsWith(want) || want.startsWith(got)) s += 5;
   else if (got.includes(want) || want.includes(got)) s += 2;
@@ -263,8 +334,9 @@ export async function findMatches(
   game: string,
   set?: string,
   number?: string,
-  limit = 6
+  limit = 6,
+  fuzzy = false
 ): Promise<CatalogCard[]> {
   const { name: clean, number: inlineNumber } = splitQuery(name);
-  return searchCards({ q: clean, game, set, number: number || inlineNumber, limit }, true);
+  return searchCards({ q: clean, game, set, number: number || inlineNumber, limit, fuzzy }, true);
 }

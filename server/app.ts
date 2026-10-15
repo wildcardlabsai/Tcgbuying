@@ -797,20 +797,23 @@ app.get('/api/search-cards', async (req: Request, res: Response) => {
 app.post('/api/identify-from-text', async (req: Request, res: Response) => {
   const top = String(req.body?.top ?? '').slice(0, 2000);
   const bottom = String(req.body?.bottom ?? '').slice(0, 2000);
-  const parsed = parseOcr(top, bottom);
+  const full = String(req.body?.full ?? '').slice(0, 6000);
+  const parsed = parseOcr(top, bottom, full);
   if (parsed.names.length === 0) {
     res.status(422).json({ success: false, error: 'card_not_identified' });
     return;
   }
 
   const game = parsed.gameHint === 'pokemon' ? 'Pokémon' : parsed.gameHint === 'ygo' ? 'Yu-Gi-Oh!' : 'any';
-  let best: { cards: CatalogCard[]; name: string } | null = null;
-  for (const name of parsed.names) {
-    const cards = await findMatches(name, game, undefined, parsed.number || parsed.setCode, 6);
-    const exact = cards[0] && cards[0].name.toLowerCase().replace(/[^a-z0-9]/g, '').startsWith(name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5));
-    if (cards.length && (!best || exact)) best = { cards, name };
-    if (exact) break;
-  }
+  const names = parsed.names.slice(0, 4);
+  const results = await Promise.all(
+    names.map(async (name) => ({
+      name,
+      cards: await findMatches(name, game, undefined, parsed.number || parsed.setCode, 6, true).catch(() => [] as CatalogCard[]),
+    }))
+  );
+  // Prefer the first candidate (name band reads best) that returned anything
+  const best = results.find((r) => r.cards.length > 0) ?? null;
   if (!best) {
     res.status(422).json({ success: false, error: 'card_not_identified' });
     return;

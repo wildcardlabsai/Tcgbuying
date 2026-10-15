@@ -1,6 +1,7 @@
 // Copies the browser OCR engine (tesseract.js worker, wasm cores, English data) into public/ocr so it is
 // served from our own domain instead of a third-party CDN. Runs before dev and build.
-import { cpSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { cpSync, mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { join } from 'node:path';
 
 const out = 'public/ocr';
@@ -17,5 +18,10 @@ for (const f of readdirSync(core)) {
   // Only the LSTM cores are needed for the default engine.
   if (/^tesseract-core.*lstm\.(js|wasm\.js)$/.test(f)) cpSync(join(core, f), join(out, f));
 }
-for (const f of readdirSync(lang)) cpSync(join(lang, f), join('public/ocr/lang', f));
+// Ship the language data uncompressed: some hosts add Content-Encoding to .gz files, which would make the
+// browser decompress them and then break tesseract's own decompression.
+for (const f of readdirSync(lang)) {
+  if (f.endsWith('.gz')) writeFileSync(join('public/ocr/lang', f.replace(/\.gz$/, '')), gunzipSync(readFileSync(join(lang, f))));
+  else cpSync(join(lang, f), join('public/ocr/lang', f));
+}
 console.log('[ocr] assets copied to public/ocr');

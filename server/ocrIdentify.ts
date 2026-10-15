@@ -39,8 +39,8 @@ function isNameLike(s: string): boolean {
   return true;
 }
 
-export function parseOcr(top: string, bottom: string): OcrParse {
-  const all = `${top}\n${bottom}`;
+export function parseOcr(top: string, bottom: string, full = ''): OcrParse {
+  const all = `${top}\n${bottom}\n${full}`;
 
   let number: string | undefined;
   let setCode: string | undefined;
@@ -58,13 +58,14 @@ export function parseOcr(top: string, bottom: string): OcrParse {
   }
 
   const names: string[] = [];
-  for (const raw of top.split(/\n+/)) {
+  // Name band first; then, for cards that did not fill the frame, any readable line in the whole photo.
+  for (const raw of [...top.split(/\n+/), ...full.split(/\n+/)]) {
     const line = cleanLine(raw);
     if (!isNameLike(line)) continue;
     // Drop leading stray single characters OCR often adds ("e Charizard")
     const trimmed = line.replace(/^(?:[A-Za-z]\s)+/, '').trim();
     if (isNameLike(trimmed) && !names.includes(trimmed)) names.push(trimmed);
-    if (names.length >= 3) break;
+    if (names.length >= 5) break;
   }
   return { names, number, setCode, gameHint };
 }

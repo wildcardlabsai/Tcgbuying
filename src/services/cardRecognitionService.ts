@@ -254,17 +254,41 @@ function recognitionErrorMessage(code?: string): string {
   }
 }
 
+/** Why the in-browser backup could not identify a card (shown in brackets so problems are easy to report). */
+class OcrError extends Error {
+  constructor(public reason: 'engine' | 'no_text' | 'no_match' | 'server', message: string) {
+    super(message);
+  }
+}
+
 /** Backup: read the printed name/number in the browser and look the card up in the catalogues. */
-async function recognizeByOcr(base64Data: string): Promise<{ detection: CardDetectionResult; matchedCard: MatchedCard; alternatives: MatchedCard[] }> {
-  const { readCardText } = await import('./ocrService');
-  const { top, bottom } = await readCardText(base64Data);
-  const res = await fetch('/api/identify-from-text', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ top, bottom }),
-  });
+async function recognizeByOcr(
+  rawBase64Data: string
+): Promise<{ detection: CardDetectionResult; matchedCard: MatchedCard; alternatives: MatchedCard[] }> {
+  let text;
+  try {
+    const { readCardText } = await import('./ocrService');
+    // OCR needs more pixels than the recognition upload does.
+    text = await readCardText(await shrinkImage(rawBase64Data, 2200, 0.9));
+  } catch (err) {
+    console.warn('OCR engine failed:', err);
+    throw new OcrError('engine', 'engine');
+  }
+  if (!`${text.top}${text.bottom}${text.full}`.replace(/\s/g, '').length) throw new OcrError('no_text', 'no_text');
+
+  let res: Response;
+  try {
+    res = await fetch('/api/identify-from-text', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(text),
+    });
+  } catch {
+    throw new OcrError('server', 'server');
+  }
   const data = await res.json().catch(() => null);
-  if (!res.ok || !data?.success) throw new Error(recognitionErrorMessage('card_not_identified'));
+  if (res.status === 422) throw new OcrError('no_match', data?.error || 'no_match');
+  if (!res.ok || !data?.success) throw new OcrError('server', `http_${res.status}`);
   return data;
 }
 
@@ -314,7 +338,7 @@ export async function recognizeCardPhoto(
   // AI unavailable (or could not read it): try the in-browser OCR backup, but not for the built-in samples.
   if (!userHint) {
     try {
-      const ocr = await recognizeByOcr(base64Data);
+      const ocr = await recognizeByOcr(rawBase64Data);
       return {
         tempId,
         userPhoto: base64Data,
@@ -329,7 +353,9 @@ export async function recognizeCardPhoto(
       };
     } catch (err) {
       console.warn('OCR backup failed:', err);
-      throw new Error(recognitionErrorMessage('ocr_failed'));
+      const reason = err instanceof OcrError ? err.reason : 'engine';
+      const ai = failureCode ? failureCode.replace('recognition_', '') : 'no_response';
+      throw new Error(`${recognitionErrorMessage('ocr_failed')} [photo reader: ${ai} · backup: ${reason}]`);
     }
   }
 
