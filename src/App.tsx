@@ -253,18 +253,15 @@ function AppInner() {
       />
 
       {/* Spacer so the sticky bar never covers the footer */}
-      <div className="h-16" aria-hidden="true" />
+      <div className="h-24" aria-hidden="true" />
 
       {/* Sticky Get Started bar */}
-      <div className="fixed bottom-0 inset-x-0 z-40 bg-[#0b1329]/95 backdrop-blur border-t border-slate-800 px-4 py-3 flex items-center justify-center gap-3 sm:gap-6">
-        <p className="hidden sm:block text-sm text-slate-200 font-medium">
-          Ready to run your own online card-buying portal?
-        </p>
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <button
           onClick={() => setCurrentView('dealer_signup')}
-          className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-900/40 transition-colors cursor-pointer"
+          className="block w-full max-w-2xl mx-auto h-14 rounded-2xl bg-[#3861e1] hover:bg-[#2f55cf] active:bg-[#294ab8] text-white text-lg font-semibold transition-colors cursor-pointer"
         >
-          Get Started
+          Get your buying page
         </button>
       </div>
 
