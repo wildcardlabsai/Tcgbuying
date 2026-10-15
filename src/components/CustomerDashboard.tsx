@@ -64,6 +64,11 @@ interface CustomerDashboardProps {
   shopName?: string;
   dealerId: string | null;
   storefront?: Storefront | null;
+  shopSlug?: string;
+  /** Signed-in collector, if any. */
+  customer?: { uid: string; email: string; name: string } | null;
+  onSignIn: () => void;
+  onOpenAccount: () => void;
 }
 
 const BULK_ICON =
@@ -129,6 +134,10 @@ export default function CustomerDashboard({
   shopName = 'The Card Vault',
   dealerId,
   storefront,
+  shopSlug = '',
+  customer = null,
+  onSignIn,
+  onOpenAccount,
 }: CustomerDashboardProps) {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [intakeMode, setIntakeMode] = useState<'photos' | 'rapid_camera' | 'text_csv' | 'bulk_counter'>('photos');
@@ -187,6 +196,13 @@ export default function CustomerDashboard({
   const [customerNotes, setCustomerNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
+
+  // Signed-in collectors don't retype their details
+  useEffect(() => {
+    if (!customer) return;
+    setCustomerName((v) => v || customer.name);
+    setCustomerEmail((v) => v || customer.email);
+  }, [customer?.uid]);
 
   // Dealer pricing: percentage of market value for singles, flat per-card rates for bulk.
   // All amounts below are GBP (base currency); display goes through fmt().
@@ -619,7 +635,7 @@ export default function CustomerDashboard({
       notes: `${deliveryMethod === 'shipping' ? 'Prefers Insured Mail Kit' : 'Dropping off in-store'}. ${customerNotes}`,
       photos: cardItems.map((c) => c.userPhoto),
       items: submissionItems,
-    }, dealerId);
+    }, dealerId, customer ? { uid: customer.uid, shopName, shopSlug } : undefined);
 
     if (!result.success) {
       setIsSubmitting(false);
@@ -661,6 +677,12 @@ export default function CustomerDashboard({
 
         <div className="flex items-center gap-3">
           <CurrencySelect />
+          <button
+            onClick={customer ? onOpenAccount : onSignIn}
+            className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 transition-colors"
+          >
+            {customer ? 'My account' : 'Sign in'}
+          </button>
           <button
             onClick={() => onTrackSubmission(submittedRef || '')}
             className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 flex items-center gap-1.5 transition-colors"

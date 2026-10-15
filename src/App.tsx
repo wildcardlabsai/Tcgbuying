@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { ArrowRight } from 'lucide-react';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import TrustBar from './components/TrustBar';
@@ -27,10 +28,13 @@ import {
 import { CurrencyProvider, useMoney } from './CurrencyContext';
 import LegalModal, { LegalDoc } from './components/LegalModal';
 import DealerAuthScreen from './components/DealerAuthScreen';
-import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
+import DealerOnboarding from './components/DealerOnboarding';
+import CustomerAuthScreen from './components/CustomerAuthScreen';
+import CustomerAccount from './components/CustomerAccount';
+import { subscribeToSubmissions, LiveSubmission, MySubmission } from './services/dealerSubmissionService';
 import { LOGIN_BYPASS } from './config';
 import { Storefront, getStorefront } from './services/storefrontService';
-import { subscribeToAuth, getDealerBySlug, DealerProfile, DEMO_DEALER } from './services/authService';
+import { signOutUser, subscribeToAuth, getDealerBySlug, DealerProfile, DEMO_DEALER } from './services/authService';
 
 const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 
@@ -45,9 +49,10 @@ export default function App() {
 }
 
 function AppInner() {
-  const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard' | 'dealer_signup'>(
-    shopSlugParam ? 'customer_portal' : 'landing'
-  );
+  type View = 'landing' | 'customer_portal' | 'dealer_dashboard' | 'dealer_signup' | 'customer_auth' | 'customer_account';
+  const [currentView, setCurrentView] = useState<View>(shopSlugParam ? 'customer_portal' : 'landing');
+  const [authReturnView, setAuthReturnView] = useState<View>('customer_account');
+  const [accountTrack, setAccountTrack] = useState<{ dealerId: string; shopName: string } | null>(null);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
@@ -59,6 +64,8 @@ function AppInner() {
   const [authReady, setAuthReady] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [dealer, setDealer] = useState<DealerProfile | null>(null);
+  // Anyone signed in (dealer or collector); collectors use this for "My submissions"
+  const [authUser, setAuthUser] = useState<{ uid: string; email: string; name: string } | null>(null);
 
   // Shop whose public portal is being viewed (from ?shop=<slug>)
   const [linkedShop, setLinkedShop] = useState<DealerProfile | null>(null);
@@ -67,6 +74,7 @@ function AppInner() {
   useEffect(() => {
     return subscribeToAuth((state) => {
       setDealer(state?.dealer ?? null);
+      setAuthUser(state ? { uid: state.uid, email: state.email, name: state.displayName } : null);
       setUserEmail(state?.email ?? '');
       if (!state) setSubmissionsList([]);
       setAuthReady(true);
@@ -95,6 +103,17 @@ function AppInner() {
   useEffect(() => {
     if (currentView === 'dealer_signup' && dealer) setCurrentView('dealer_dashboard');
   }, [currentView, dealer]);
+
+  // Leave the collector sign-in screen once signed in; leave the account page once signed out
+  useEffect(() => {
+    if (currentView === 'customer_auth' && authUser) setCurrentView(authReturnView);
+    if (currentView === 'customer_account' && authReady && !authUser) setCurrentView('landing');
+  }, [currentView, authUser, authReady, authReturnView]);
+
+  const openCollectorSignIn = (returnTo: View) => {
+    setAuthReturnView(returnTo);
+    setCurrentView(authUser ? returnTo : 'customer_auth');
+  };
 
   // Live submissions for the signed-in dealer (also feeds the tracker for their own view)
   useEffect(() => {
@@ -130,6 +149,10 @@ function AppInner() {
         <CustomerDashboard
           dealerId={portalDealer?.id ?? null}
           storefront={portalStorefront}
+          shopSlug={portalDealer?.slug}
+          customer={authUser}
+          onSignIn={() => openCollectorSignIn('customer_portal')}
+          onOpenAccount={() => setCurrentView('customer_account')}
           onBackToHome={() => setCurrentView('landing')}
           onOpenDealerDashboard={() => setCurrentView('dealer_dashboard')}
           onTrackSubmission={(ref) => {
@@ -157,7 +180,7 @@ function AppInner() {
       return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>;
     }
     if (!activeDealer) {
-      return <DealerAuthScreen onBackToHome={() => setCurrentView('landing')} />;
+      return <DealerAuthScreen onBackToHome={() => setCurrentView('landing')} onCreateAccount={() => setCurrentView('dealer_signup')} />;
     }
     return (
       <>
@@ -189,7 +212,57 @@ function AppInner() {
     if (!authReady) {
       return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>;
     }
-    return <DealerAuthScreen initialMode="signup" onBackToHome={() => setCurrentView('landing')} />;
+    return (
+      <>
+        <DealerOnboarding
+          onBackToHome={() => setCurrentView('landing')}
+          onSignIn={() => setCurrentView('dealer_dashboard')}
+          onOpenLegal={setLegalDoc}
+        />
+        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
+      </>
+    );
+  }
+
+  // Collector sign-in / sign-up
+  if (currentView === 'customer_auth') {
+    return (
+      <CustomerAuthScreen
+        shopName={portalDealer?.name}
+        onBack={() => setCurrentView(authReturnView === 'customer_account' ? 'landing' : authReturnView)}
+      />
+    );
+  }
+
+  // Collector account: submissions across all shops
+  if (currentView === 'customer_account' && authUser) {
+    return (
+      <>
+        <CustomerAccount
+          uid={authUser.uid}
+          name={authUser.name}
+          email={authUser.email}
+          onBack={() => setCurrentView(shopSlugParam ? 'customer_portal' : 'landing')}
+          onSignOut={() => signOutUser()}
+          onTrack={(s: MySubmission) => {
+            setAccountTrack({ dealerId: s.dealerId, shopName: s.shopName });
+            setTrackerRef(s.ref);
+            setIsTrackerOpen(true);
+          }}
+          onOpenShop={(slug) => {
+            window.location.href = `/?shop=${encodeURIComponent(slug)}`;
+          }}
+        />
+        <SubmissionTrackerModal
+          isOpen={isTrackerOpen}
+          onClose={() => setIsTrackerOpen(false)}
+          initialRef={trackerRef}
+          submissions={[]}
+          dealerId={accountTrack?.dealerId ?? null}
+          shopName={accountTrack?.shopName}
+        />
+      </>
+    );
   }
 
   // 3. MAIN LANDING PAGE (Exact Mockup Design)
@@ -248,20 +321,22 @@ function AppInner() {
       {/* Footer */}
       <Footer
         onOpenContact={() => setIsContactOpen(true)}
+        onOpenCollectorLogin={() => openCollectorSignIn('customer_account')}
         onOpenTerms={() => setLegalDoc('terms')}
         onOpenPrivacy={() => setLegalDoc('privacy')}
       />
 
-      {/* Spacer so the sticky bar never covers the footer */}
-      <div className="h-24" aria-hidden="true" />
+      {/* Spacer so the sticky bar never covers the footer (mobile only) */}
+      <div className="h-16 md:hidden" aria-hidden="true" />
 
-      {/* Sticky Get Started bar */}
-      <div className="fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      {/* Sticky Get Started bar (mobile only) */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-6px_18px_rgba(15,23,42,0.08)] px-4 py-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] flex justify-center">
         <button
           onClick={() => setCurrentView('dealer_signup')}
-          className="block w-full max-w-2xl mx-auto h-14 rounded-2xl bg-[#3861e1] hover:bg-[#2f55cf] active:bg-[#294ab8] text-white text-lg font-semibold transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-[14px] font-semibold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 active:opacity-95 rounded-lg shadow-sm transition-all whitespace-nowrap cursor-pointer"
         >
-          Get your buying page
+          <span>Get Started</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
 

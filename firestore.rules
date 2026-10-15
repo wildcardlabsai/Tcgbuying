@@ -27,6 +27,11 @@ service cloud.firestore {
         (!('storefront' in request.resource.data) || request.resource.data.storefront is map);
       allow delete: if false;
 
+      // Private onboarding answers: only the dealer can read or write them.
+      match /private/{docId} {
+        allow read, write: if isOwner(dealerId);
+      }
+
       // Customer submissions. The document id is the unguessable reference
       // (e.g. TCG-K4M2XP7Q), so customers can `get` their own submission but
       // only the dealer can list/query all of them.
@@ -42,7 +47,9 @@ service cloud.firestore {
           request.resource.data.customerName is string && request.resource.data.customerName.size() <= 80 &&
           request.resource.data.customerEmail is string && request.resource.data.customerEmail.size() <= 120 &&
           request.resource.data.cardCount is number && request.resource.data.cardCount >= 1 &&
-          request.resource.data.status == 'New';
+          request.resource.data.status == 'New' &&
+          (!('customerUid' in request.resource.data) ||
+            (isSignedIn() && request.resource.data.customerUid == request.auth.uid));
 
         // Dealer can change anything. A customer (unauthenticated) may only
         // respond to an offer: accept, decline or counter.
@@ -54,6 +61,12 @@ service cloud.firestore {
 
         allow delete: if isOwner(dealerId);
       }
+    }
+
+    // A signed-in collector's index of their own submissions (shop + reference), used by "My submissions".
+    match /users/{uid}/submissionRefs/{refId} {
+      allow read, create, delete: if isOwner(uid);
+      allow update: if false;
     }
 
     // Default deny

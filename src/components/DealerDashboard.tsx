@@ -44,7 +44,7 @@ import {
   SubmittedCardItem,
 } from '../services/dealerSubmissionService';
 import { estimateCardPricing } from '../services/marketPricingService';
-import { signOutDealer } from '../services/authService';
+import { signOutUser } from '../services/authService';
 import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
 import StorefrontEditor from './StorefrontEditor';
@@ -238,7 +238,7 @@ export default function DealerDashboard({
               {userEmail}
             </span>
             <button
-              onClick={() => signOutDealer()}
+              onClick={() => signOutUser()}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
               title="Logout"
             >

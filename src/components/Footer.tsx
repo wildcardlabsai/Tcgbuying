@@ -9,9 +9,10 @@ interface FooterProps {
   onOpenContact?: () => void;
   onOpenTerms?: () => void;
   onOpenPrivacy?: () => void;
+  onOpenCollectorLogin?: () => void;
 }
 
-export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy }: FooterProps) {
+export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOpenCollectorLogin }: FooterProps) {
   return (
     <footer className="bg-white border-t border-slate-200 py-12 text-xs text-slate-500">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -46,6 +47,14 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy }: Fo
             >
               Contact
             </button>
+            {onOpenCollectorLogin && (
+              <button
+                onClick={onOpenCollectorLogin}
+                className="hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Selling cards? Sign in
+              </button>
+            )}
           </div>
 
           {/* Right Links */}

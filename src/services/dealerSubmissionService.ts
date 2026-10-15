@@ -7,6 +7,8 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  collection as fsCollection,
   updateDoc,
   onSnapshot,
   serverTimestamp,
@@ -195,7 +197,8 @@ export async function createCustomerSubmission(
     photos?: string[];
     items?: SubmittedCardItem[];
   },
-  dealerId: string
+  dealerId: string,
+  owner?: { uid: string; shopName: string; shopSlug: string }
 ): Promise<{ success: boolean; ref: string; id: string }> {
   const id = generateReferenceId();
   const ref = `#${id}`;
@@ -205,6 +208,7 @@ export async function createCustomerSubmission(
       dealerId,
       reference: ref,
       ...submission,
+      ...(owner ? { customerUid: owner.uid, shopName: owner.shopName, shopSlug: owner.shopSlug } : {}),
       status: 'New',
       notes: submission.notes || 'Submitted via online card recognition portal',
       payoutMethodDetails: submission.payoutMethodDetails || '',
@@ -229,6 +233,7 @@ export async function createCustomerSubmission(
   try {
     await setDoc(doc(db, 'dealers', dealerId, 'submissions', id), {
       dealerId,
+      ...(owner ? { customerUid: owner.uid } : {}),
       reference: ref,
       customerName: submission.customerName,
       customerEmail: submission.customerEmail,
@@ -248,6 +253,16 @@ export async function createCustomerSubmission(
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+    if (owner) {
+      // Best effort: link the submission to the collector's account so they can find it later.
+      setDoc(doc(db, 'users', owner.uid, 'submissionRefs', id), {
+        dealerId,
+        shopName: owner.shopName,
+        shopSlug: owner.shopSlug,
+        reference: ref,
+        createdAt: serverTimestamp(),
+      }).catch((e) => handleFirestoreError(e, OperationType.CREATE, `users/${owner.uid}/submissionRefs/${id}`));
+    }
     return { success: true, ref, id };
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `dealers/${dealerId}/submissions/${id}`);
@@ -307,4 +322,38 @@ export async function updateSubmissionCardItem(
     handleFirestoreError(error, OperationType.UPDATE, `dealers/${dealerId}/submissions/${submissionId}`);
     return false;
   }
+}
+
+/** A collector's submission, with the shop it went to. */
+export interface MySubmission extends LiveSubmission {
+  dealerId: string;
+  shopName: string;
+  shopSlug: string;
+}
+
+/** All submissions a signed-in collector has made, across every shop. Newest first. */
+export async function listMySubmissions(uid: string): Promise<MySubmission[]> {
+  let out: MySubmission[] = [];
+  if (IS_LOCAL) {
+    out = readLocalDocs()
+      .filter((d) => d.customerUid === uid)
+      .map((d) => ({ ...mapSubmission(d.id, d), dealerId: d.dealerId, shopName: d.shopName || 'Card shop', shopSlug: d.shopSlug || '' }));
+  } else {
+    try {
+      const refs = await getDocs(fsCollection(db, 'users', uid, 'submissionRefs'));
+      const loaded = await Promise.all(
+        refs.docs.map(async (r) => {
+          const meta = r.data();
+          const snap = await getDoc(doc(db, 'dealers', meta.dealerId, 'submissions', r.id));
+          return snap.exists()
+            ? ({ ...mapSubmission(snap.id, snap.data()), dealerId: meta.dealerId, shopName: meta.shopName, shopSlug: meta.shopSlug } as MySubmission)
+            : null;
+        })
+      );
+      out = loaded.filter((x): x is MySubmission => x !== null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, `users/${uid}/submissionRefs`);
+    }
+  }
+  return out.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
 }
