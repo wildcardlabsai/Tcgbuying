@@ -3,11 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// Card catalogue lookups against free public APIs:
-//   Pokémon  -> https://docs.pokemontcg.io  (TCGplayer / Cardmarket prices included)
-//   Magic    -> https://scryfall.com/docs/api
-//   Yu-Gi-Oh -> https://ygoprodeck.com/api-guide
-// Prices are converted to GBP with flat factors; they are estimates, not live sold data.
+// Pokémon card lookups against free public APIs:
+//   pokemontcg.io -> https://docs.pokemontcg.io  (TCGplayer market prices and Cardmarket prices included)
+//   TCGdex        -> https://tcgdex.dev  (fallback)
+// Prices are converted to GBP with flat factors. TCGplayer's "market" price is derived from recent TCGplayer
+// sales; it is a good guide but not eBay sold data.
+
+export interface PriceVariant {
+  key: string;
+  label: string;
+  /** GBP market price for this printing/finish. */
+  price: number;
+}
 
 export interface CatalogCard {
   id: string;
@@ -17,30 +24,43 @@ export interface CatalogCard {
   cardNumber: string;
   rarity: string;
   imageUrl: string;
-  /** GBP estimate; 0 when no price is available. */
+  /** GBP market estimate for the default variant; 0 when no price is available. */
   rawMarketPrice: number;
   priceKnown: boolean;
+  /** Where the main price comes from, and when that source last updated it. */
+  priceSource: string;
+  priceUpdated?: string;
+  /** Low / high range reported by the source for the chosen variant (GBP). */
+  priceLow?: number;
+  priceHigh?: number;
+  /** Printings/finishes with their own prices (holo, reverse holo, 1st edition ...). */
+  variants: PriceVariant[];
+  priceVariant: string;
+  /** Cross-checks from other sources (GBP). */
+  cardmarketPrice?: number;
+  pricechartingPrice?: number;
+  /** True when TCGplayer and Cardmarket differ a lot, so the dealer should check. */
+  priceDisagree?: boolean;
   /** Product page on TCGplayer (direct when the source provides it, otherwise a search for the card). */
   tcgplayerUrl: string;
   /** Cardmarket product page, when the source provides one. */
   cardmarketUrl?: string;
-  /** The catalogue page the match came from (Pokémon TCG API / Scryfall / YGOPRODeck). */
+  pricechartingUrl?: string;
+  /** The catalogue page the match came from. */
   sourceUrl?: string;
 }
 
-export type GameKey = 'pokemon' | 'mtg' | 'ygo' | 'any';
+// Pokémon only.
+export type GameKey = 'pokemon';
 
 const USD_GBP = 0.78;
 const EUR_GBP = 0.86;
 const TIMEOUT_MS = 7000;
-const UA = 'TCGBuyer/1.0 (+https://tcgbuying.vercel.app)';
+const UA = 'TCGBuyer/1.0 (+https://tcgbuyer.xyz)';
 
-export function normaliseGame(game?: string): GameKey {
-  const g = (game || '').toLowerCase();
-  if (g.includes('pok')) return 'pokemon';
-  if (g.includes('magic') || g.includes('mtg')) return 'mtg';
-  if (g.includes('yu') || g.includes('ygo')) return 'ygo';
-  return 'any';
+/** TCGBuyer only deals in Pokémon cards, whatever game the caller asks for. */
+export function normaliseGame(_game?: string): GameKey {
+  return 'pokemon';
 }
 
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -64,9 +84,8 @@ async function getJson(url: string, extraHeaders: Record<string, string> = {}): 
   }
 }
 
-const TCGPLAYER_GAME: Record<string, string> = { pokemon: 'pokemon', mtg: 'magic', ygo: 'yugioh' };
-const tcgplayerSearch = (game: keyof typeof TCGPLAYER_GAME, name: string) =>
-  `https://www.tcgplayer.com/search/${TCGPLAYER_GAME[game]}/product?q=${encodeURIComponent(name)}`;
+const tcgplayerSearch = (_game: 'pokemon', name: string) =>
+  `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}`;
 const httpsOnly = (u: unknown) => (typeof u === 'string' && u.startsWith('https://') ? u : undefined);
 
 const esc = (s: string) => s.replace(/["\\]/g, ' ').trim();
@@ -162,6 +181,9 @@ async function searchTcgdex(o: SearchOpts): Promise<CatalogCard[]> {
         imageUrl: d.image ? `${d.image}/high.webp` : '',
         rawMarketPrice: price,
         priceKnown: price > 0,
+        priceSource: price > 0 ? 'TCGdex (TCGplayer / Cardmarket)' : '',
+        variants: [],
+        priceVariant: '',
         tcgplayerUrl: tcgplayerSearch('pokemon', `${d.name} ${d.localId || ''}`.trim()),
         sourceUrl: `https://www.tcgdex.net/cards/en/${encodeURIComponent(d.id)}`,
       };
@@ -177,15 +199,40 @@ async function searchPokemon(o: SearchOpts, exactName: boolean): Promise<Catalog
   return primary.length ? primary : fallback;
 }
 
+const VARIANT_LABELS: Record<string, string> = {
+  normal: 'Non-holo',
+  holofoil: 'Holo',
+  reverseHolofoil: 'Reverse holo',
+  '1stEditionHolofoil': '1st Edition holo',
+  '1stEditionNormal': '1st Edition',
+  unlimitedHolofoil: 'Unlimited holo',
+  unlimitedNormal: 'Unlimited',
+};
+
+/** Which finish a card most likely has, used to pick the default price when a card has several. */
+function variantOrder(rarity: string): string[] {
+  const holoFirst = /holo|ex\b|\bv\b|vmax|vstar|gx|illustration|secret|ultra|hyper|shiny|radiant|amazing|special/i.test(rarity);
+  return holoFirst
+    ? ['holofoil', 'unlimitedHolofoil', '1stEditionHolofoil', 'normal', 'unlimitedNormal', '1stEditionNormal', 'reverseHolofoil']
+    : ['normal', 'unlimitedNormal', '1stEditionNormal', 'holofoil', 'unlimitedHolofoil', '1stEditionHolofoil', 'reverseHolofoil'];
+}
+
 function mapPokemon(p: any): CatalogCard {
   const prices = p.tcgplayer?.prices || {};
-  const order = ['holofoil', '1stEditionHolofoil', 'unlimitedHolofoil', 'reverseHolofoil', 'normal', '1stEditionNormal', 'unlimitedNormal'];
-  let price = 0;
-  for (const k of order) {
-    price = money(prices[k]?.market ?? prices[k]?.mid, USD_GBP);
-    if (price) break;
+  const variants: PriceVariant[] = Object.keys(prices)
+    .map((key) => ({ key, label: VARIANT_LABELS[key] || key, price: money(prices[key]?.market ?? prices[key]?.mid, USD_GBP) }))
+    .filter((v) => v.price > 0);
+  const chosenKey = variantOrder(p.rarity || '').find((k) => variants.some((v) => v.key === k)) || variants[0]?.key || '';
+  const chosen = variants.find((v) => v.key === chosenKey);
+  const cardmarket = money(p.cardmarket?.prices?.averageSellPrice ?? p.cardmarket?.prices?.trendPrice, EUR_GBP);
+
+  let price = chosen?.price ?? 0;
+  let source = chosen ? 'TCGplayer' : '';
+  if (!price && cardmarket) {
+    price = cardmarket;
+    source = 'Cardmarket';
   }
-  if (!price) price = money(p.cardmarket?.prices?.averageSellPrice ?? p.cardmarket?.prices?.trendPrice, EUR_GBP);
+  const disagree = Boolean(chosen && cardmarket) && (chosen!.price / cardmarket > 1.4 || chosen!.price / cardmarket < 0.7);
   return {
     id: `pkmn-${p.id}`,
     name: p.name,
@@ -196,74 +243,18 @@ function mapPokemon(p: any): CatalogCard {
     imageUrl: p.images?.large || p.images?.small || '',
     rawMarketPrice: price,
     priceKnown: price > 0,
+    priceSource: source,
+    priceUpdated: chosen ? p.tcgplayer?.updatedAt : p.cardmarket?.updatedAt,
+    priceLow: chosen ? money(prices[chosenKey]?.low, USD_GBP) || undefined : undefined,
+    priceHigh: chosen ? money(prices[chosenKey]?.high, USD_GBP) || undefined : undefined,
+    variants,
+    priceVariant: chosenKey,
+    cardmarketPrice: cardmarket || undefined,
+    priceDisagree: disagree || undefined,
     tcgplayerUrl: httpsOnly(p.tcgplayer?.url) || tcgplayerSearch('pokemon', `${p.name} ${p.number || ''}`.trim()),
     cardmarketUrl: httpsOnly(p.cardmarket?.url),
     sourceUrl: `https://pokemontcg.io/card-search?q=${encodeURIComponent(p.id)}`,
   };
-}
-
-// ---------- Magic: The Gathering ----------
-async function searchMtg(o: SearchOpts, exactName: boolean): Promise<CatalogCard[]> {
-  const q = exactName ? `!"${esc(o.q)}"` : esc(o.q);
-  const json = await getJson(
-    `https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q=${encodeURIComponent(q)}`
-  );
-  let rows: any[] = json?.data || [];
-  if (!rows.length && exactName) {
-    const fuzzy = await getJson(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(o.q)}`);
-    if (fuzzy?.id) rows = [fuzzy];
-  }
-  if (o.set) {
-    const wanted = o.set.toLowerCase();
-    rows.sort((a, b) => Number(b.set_name?.toLowerCase() === wanted) - Number(a.set_name?.toLowerCase() === wanted));
-  }
-  return rows.slice(0, o.limit ?? 8).map((c) => {
-    const price = money(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched, USD_GBP);
-    return {
-      id: `mtg-${c.id}`,
-      name: c.name,
-      game: 'Magic: The Gathering',
-      setName: c.set_name || '',
-      cardNumber: c.collector_number || '',
-      rarity: c.rarity ? c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1) : '',
-      imageUrl: c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal || '',
-      rawMarketPrice: price,
-      priceKnown: price > 0,
-      tcgplayerUrl: httpsOnly(c.purchase_uris?.tcgplayer) || tcgplayerSearch('mtg', c.name),
-      cardmarketUrl: httpsOnly(c.purchase_uris?.cardmarket),
-      sourceUrl: httpsOnly(c.scryfall_uri),
-    };
-  });
-}
-
-// ---------- Yu-Gi-Oh! ----------
-async function searchYgo(o: SearchOpts, exactName: boolean): Promise<CatalogCard[]> {
-  const param = exactName ? 'name' : 'fname';
-  let json = await getJson(`https://db.ygoprodeck.com/api/v7/cardinfo.php?${param}=${encodeURIComponent(o.q)}`);
-  if (!json?.data && exactName) {
-    json = await getJson(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(o.q)}`);
-  }
-  const out: CatalogCard[] = [];
-  for (const card of (json?.data || []).slice(0, o.limit ?? 8)) {
-    const price = money(card.card_prices?.[0]?.tcgplayer_price, USD_GBP);
-    const sets: any[] = card.card_sets || [];
-    const wanted = o.set?.toLowerCase();
-    const set = (wanted && sets.find((s) => s.set_name?.toLowerCase() === wanted)) || sets[0];
-    out.push({
-      id: `ygo-${card.id}`,
-      name: card.name,
-      game: 'Yu-Gi-Oh!',
-      setName: set?.set_name || '',
-      cardNumber: set?.set_code || '',
-      rarity: set?.set_rarity || '',
-      imageUrl: card.card_images?.[0]?.image_url || '',
-      rawMarketPrice: price,
-      priceKnown: price > 0,
-      tcgplayerUrl: tcgplayerSearch('ygo', set?.set_code || card.name),
-      sourceUrl: httpsOnly(card.ygoprodeck_url),
-    });
-  }
-  return out;
 }
 
 /** Edit-distance similarity from 0 to 1; lets slightly misread OCR names still rank sensibly. */
@@ -303,12 +294,7 @@ export async function searchCards(o: SearchOpts, exactName = false): Promise<Cat
   const q = o.q.trim();
   if (!q) return [];
   const opts = { ...o, q };
-  const game = normaliseGame(o.game);
-  const jobs: Promise<CatalogCard[]>[] = [];
-  if (game === 'pokemon' || game === 'any') jobs.push(searchPokemon(opts, exactName));
-  if (game === 'mtg' || game === 'any') jobs.push(searchMtg(opts, exactName));
-  if (game === 'ygo' || game === 'any') jobs.push(searchYgo(opts, exactName));
-  const results = (await Promise.all(jobs.map((j) => j.catch(() => [] as CatalogCard[])))).flat();
+  const results = await searchPokemon(opts, exactName).catch(() => [] as CatalogCard[]);
   return results
     .map((c) => ({ c, s: score(c, opts) }))
     .sort((a, b) => b.s - a.s)

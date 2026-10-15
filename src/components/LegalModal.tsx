@@ -16,7 +16,7 @@ const DOCS: Record<LegalDoc, { title: string; sections: { h: string; p: string[]
       {
         h: 'What TCGBuyer is',
         p: [
-          'TCGBuyer gives trading card shops their own online buying page. Collectors photograph or list the cards they want to sell, see an estimated offer, and send the collection to the shop. The shop reviews it, makes an offer, and the collector accepts, counters or declines.',
+          'TCGBuyer gives Pokémon card shops their own online buying page. Collectors photograph or list the cards they want to sell, see an estimated offer, and send the collection to the shop. The shop reviews it, makes an offer, and the collector accepts, counters or declines.',
           'Shops keep control: they set their own cash and store-credit percentages, bulk rates, branding, contact details and the final offer after inspecting the cards.',
         ],
       },
@@ -42,7 +42,7 @@ const DOCS: Record<LegalDoc, { title: string; sections: { h: string; p: string[]
       {
         h: '1. About TCGBuyer',
         p: [
-          'TCGBuyer ("we", "us") provides software that lets trading card shops ("Dealers") run an online buying portal and lets collectors ("Collectors") submit cards for the Dealer to review and make an offer on.',
+          'TCGBuyer ("we", "us") provides software that lets Pokémon card shops ("Dealers") run an online buying portal and lets collectors ("Collectors") submit cards for the Dealer to review and make an offer on.',
           'We provide the software only. Any sale of cards is a contract between the Collector and the Dealer, not with TCGBuyer.',
         ],
       },

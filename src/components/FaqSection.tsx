@@ -23,14 +23,14 @@ const faqs: FaqItem[] = [
       'TCGBuyer is free while it is in early access, and you do not need a card to sign up. If paid plans are introduced later, we will tell shops in advance.',
   },
   {
-    question: 'Which trading card games does it support?',
+    question: 'Is it only for Pokémon cards?',
     answer:
-      'Pokémon, Magic: The Gathering and Yu-Gi-Oh! have automatic card lookup and price estimates. Collectors can also submit other games and sports cards, but those are not identified automatically yet, so you will price them yourself when you review.',
+      'Yes. TCGBuyer is built for Pokémon cards only, so card identification, set and number matching and prices are all tuned for the Pokémon TCG. Other games are not supported.',
   },
   {
-    question: 'How are the prices worked out?',
+    question: 'How accurate are the prices?',
     answer:
-      'Estimated values come from public price sources, converted to your currency. You choose what percentage of that value you pay in cash or store credit, and set flat per-card rates for bulk. These are estimates, not sold-listing data, and you always confirm the final offer after seeing the cards.',
+      'Prices are TCGplayer market prices, which are based on recent TCGplayer sales, with Cardmarket shown as a cross-check and a note when the two disagree. Each price shows its source and when it was last updated, and cards with several printings (holo, reverse holo, 1st edition) let the collector pick the right one. They are not eBay sold prices: eBay only shares sold data with approved partners. PriceCharting can be added if you have a subscription. You choose your percentage and condition adjustments, and you always confirm the final offer after seeing the cards. Graded cards are not auto-priced, so you set those yourself.',
   },
   {
     question: 'Can I make the page look like my shop?',

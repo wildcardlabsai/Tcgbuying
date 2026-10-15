@@ -137,7 +137,7 @@ export default function StorefrontEditor({ dealerId, shopName, onSaved, onPrevie
 
         <div>
           <label className={label} htmlFor="sf-tagline">Tagline</label>
-          <input id="sf-tagline" className={field} maxLength={120} value={sf.tagline} onChange={(e) => update({ tagline: e.target.value })} placeholder="e.g. We buy Pokémon, Magic & Yu-Gi-Oh! collections" />
+          <input id="sf-tagline" className={field} maxLength={120} value={sf.tagline} onChange={(e) => update({ tagline: e.target.value })} placeholder="e.g. We buy Pokémon card collections" />
         </div>
       </section>
 

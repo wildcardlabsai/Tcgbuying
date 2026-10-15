@@ -34,7 +34,8 @@ export interface DealerOnboarding {
   phone: string;
   country: string;
   shopType: 'physical' | 'online' | 'both';
-  games: string[];
+  /** Kinds of Pokémon product the dealer buys (singles, graded, sealed ...). */
+  products: string[];
   monthlyVolume: string;
   currentMethods: string[];
   website: string;
@@ -212,7 +213,7 @@ export async function signUpDealer(input: DealerSignUpInput): Promise<DealerProf
     phone: input.phone.trim().slice(0, 40),
     country: input.country,
     shopType: input.shopType,
-    games: input.games.slice(0, 12),
+    products: input.products.slice(0, 12),
     monthlyVolume: input.monthlyVolume,
     currentMethods: input.currentMethods.slice(0, 12),
     website: input.website.trim().slice(0, 200),

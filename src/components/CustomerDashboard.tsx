@@ -43,6 +43,7 @@ import {
   scanMultiCardBinderPhoto,
   parseBuylistTextOrCsv,
   recalculateCardValuation,
+  conditionMultiplier,
   searchAlternativeCards,
   mapWithConcurrency,
   withTimeout,
@@ -54,6 +55,7 @@ import PrintableManifestModal from './PrintableManifestModal';
 import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
 import PortalFooter from './PortalFooter';
 import CardLinks from './CardLinks';
+import PriceDetails from './PriceDetails';
 import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
 import { useMoney } from '../CurrencyContext';
 import { IS_LOCAL } from '../config';
@@ -93,16 +95,6 @@ const SAMPLE_PRESETS = [
     game: 'Pokémon',
     url: 'https://images.pokemontcg.io/swsh7/215_hires.png',
   },
-  {
-    name: 'Black Lotus',
-    game: 'Magic: The Gathering',
-    url: 'https://cards.scryfall.io/large/front/b/d/bd8fa327-dd41-4737-8f19-2cf5eb1f7cdd.jpg',
-  },
-  {
-    name: 'Blue-Eyes White Dragon',
-    game: 'Yu-Gi-Oh!',
-    url: 'https://images.ygoprodeck.com/images/cards/89631139.jpg',
-  },
 ];
 
 // Sample multi-card binder page
@@ -115,20 +107,11 @@ const SAMPLE_BINDER_PAGE = {
 const PRESET_BUYLISTS = {
   pokemon: `4 Charizard Base Set #4/102 Holo Rare Raw NM
 2 Umbreon VMAX Evolving Skies #215/203 Secret Alt Art Raw NM
-1 Pikachu Illustrator CoroCoro Promo PSA 9
+1 Pikachu Celebrations #5/25 Raw NM
 3 Mewtwo & Mew GX Unified Minds #71/236 Raw NM
 5 Gengar VMAX Fusion Strike #157/264 Raw NM
 4 Blastoise Base Set #2/102 Raw LP
 2 Lugia V Alternate Art Silver Tempest #186/195 Raw NM`,
-  mtg: `1 Black Lotus Unlimited Edition Rare Raw LP
-2 Mana Crypt Double Masters Artifact Raw NM
-4 Mox Diamond Stronghold Artifact Raw LP
-4 Force of Will Alliances Rare Raw NM
-2 Ragavan, Nimble Pilferer Modern Horizons 2 Mythic Raw NM`,
-  ygo: `3 Blue-Eyes White Dragon Legend of Blue Eyes LOB-001 Ultra Rare Raw NM
-2 Dark Magician Legend of Blue Eyes LOB-005 Ultra Rare Raw NM
-1 Red-Eyes Black Dragon Legend of Blue Eyes Ultra Rare Raw LP
-3 Exodia the Forbidden One LOB Ultra Rare Raw NM`,
 };
 
 export default function CustomerDashboard({
@@ -177,7 +160,6 @@ export default function CustomerDashboard({
   const [searchModalCardIndex, setSearchModalCardIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<MatchedCard[]>([]);
-  const [searchGame, setSearchGame] = useState('any');
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchedOnce, setSearchedOnce] = useState(false);
@@ -218,8 +200,7 @@ export default function CustomerDashboard({
     (storefront?.buylist || []).find(
       (b) => norm(b.name) === norm(card.name) && (!b.setName || norm(card.setName).includes(norm(b.setName)) || norm(b.setName).includes(norm(card.setName)))
     );
-  const conditionFactor = (condition: string) =>
-    recalculateCardValuation(100, condition, condition.includes('PSA') || condition.includes('BGS')).marketPrice / 100;
+  const conditionFactor = (condition: string) => conditionMultiplier(condition, pricing.conditions);
   /** Cash / credit offer for a card: fixed shop price if listed, otherwise the percentage of market value. */
   const cashFor = (card: MatchedCard, condition = 'Near Mint') => {
     const entry = buylistFor(card);
@@ -470,7 +451,8 @@ export default function CustomerDashboard({
         const newPricing = recalculateCardValuation(
           c.matchedCard.ebayLastSoldAvg,
           condition,
-          isGraded
+          isGraded,
+          pricing.conditions
         );
         return {
           ...c,
@@ -487,6 +469,29 @@ export default function CustomerDashboard({
   };
 
   // Adjust condition for a single card
+  /** Switch the printing/finish (holo, reverse holo, 1st edition ...), which has its own market price. */
+  const handleVariantChange = (index: number, key: string) => {
+    setCardItems((prev) => {
+      const updated = [...prev];
+      const target = updated[index];
+      const variant = target.matchedCard.variants?.find((v) => v.key === key);
+      if (!variant) return prev;
+      const newPricing = recalculateCardValuation(variant.price, target.selectedCondition, false, pricing.conditions);
+      updated[index] = {
+        ...target,
+        matchedCard: {
+          ...target.matchedCard,
+          priceVariant: key,
+          ebayLastSoldAvg: variant.price,
+          marketPrice: newPricing.marketPrice,
+          storeCashOffer: newPricing.storeCashOffer,
+          storeCreditOffer: newPricing.storeCreditOffer,
+        },
+      };
+      return updated;
+    });
+  };
+
   const handleConditionChange = (index: number, newCondition: string) => {
     setCardItems((prev) => {
       const updated = [...prev];
@@ -495,7 +500,8 @@ export default function CustomerDashboard({
       const newPricing = recalculateCardValuation(
         target.matchedCard.ebayLastSoldAvg,
         newCondition,
-        isGraded
+        isGraded,
+        pricing.conditions
       );
 
       updated[index] = {
@@ -518,11 +524,11 @@ export default function CustomerDashboard({
   };
 
   // Open alternative match search modal
-  const runAlternativeSearch = async (q: string, game: string) => {
+  const runAlternativeSearch = async (q: string) => {
     setIsSearching(true);
     setSearchError(null);
     try {
-      setSearchResults(await searchAlternativeCards(q, game));
+      setSearchResults(await searchAlternativeCards(q, 'Pokémon'));
     } catch (err) {
       setSearchResults([]);
       setSearchError((err as Error).message);
@@ -537,8 +543,7 @@ export default function CustomerDashboard({
     setSearchQuery(card.name);
     setSearchResults([]);
     setSearchedOnce(false);
-    setSearchGame(card.game || 'any');
-    runAlternativeSearch(card.name, card.game || 'any');
+    runAlternativeSearch(card.name);
   };
 
   /** Switch the card at `index` to another catalogue match, keeping the previous match as an option. */
@@ -548,7 +553,7 @@ export default function CustomerDashboard({
       const target = updated[index];
       if (!target) return prev;
       const isGraded = target.selectedCondition.includes('PSA');
-      const newPricing = recalculateCardValuation(card.marketPrice, target.selectedCondition, isGraded);
+      const newPricing = recalculateCardValuation(card.marketPrice, target.selectedCondition, isGraded, pricing.conditions);
       const others = (target.alternatives || []).filter((a) => a.id !== card.id);
 
       updated[index] = {
@@ -1052,17 +1057,6 @@ export default function CustomerDashboard({
                       </p>
                     </div>
 
-                    <div className="flex gap-2">
-                      <select
-                        value={buylistGame}
-                        onChange={(e) => setBuylistGame(e.target.value)}
-                        className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white"
-                      >
-                        <option value="Pokémon">Pokémon</option>
-                        <option value="Magic: The Gathering">Magic: The Gathering</option>
-                        <option value="Yu-Gi-Oh!">Yu-Gi-Oh!</option>
-                      </select>
-                    </div>
                   </div>
 
                   {/* Preset quick loaders */}
@@ -1076,27 +1070,7 @@ export default function CustomerDashboard({
                       }}
                       className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-750 text-blue-300 border border-slate-700 text-[11px]"
                     >
-                      20x Vintage Pokémon
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBuylistGame('Magic: The Gathering');
-                        setBuylistText(PRESET_BUYLISTS.mtg);
-                      }}
-                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-750 text-blue-300 border border-slate-700 text-[11px]"
-                    >
-                      MTG Power Staples
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setBuylistGame('Yu-Gi-Oh!');
-                        setBuylistText(PRESET_BUYLISTS.ygo);
-                      }}
-                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-750 text-blue-300 border border-slate-700 text-[11px]"
-                    >
-                      Yu-Gi-Oh 1st Edition
+                      Load a sample list
                     </button>
                   </div>
 
@@ -1104,7 +1078,7 @@ export default function CustomerDashboard({
                     rows={8}
                     value={buylistText}
                     onChange={(e) => setBuylistText(e.target.value)}
-                    placeholder="e.g.&#10;4 Charizard Base Set #4/102 Holo Rare Raw NM&#10;2 Umbreon VMAX Evolving Skies&#10;1 Black Lotus Unlimited"
+                    placeholder="e.g.&#10;4 Charizard Base Set #4/102 Holo Rare Raw NM&#10;2 Umbreon VMAX Evolving Skies&#10;1 Lugia V Alternate Art"
                     className="w-full bg-slate-950 font-mono text-xs text-slate-200 border border-slate-700 rounded-xl p-3 focus:outline-hidden focus:border-blue-500"
                   />
 
@@ -1625,6 +1599,28 @@ export default function CustomerDashboard({
                             </span>
                           )}
                         </div>
+                        <PriceDetails card={item.matchedCard} fmt={fmt} />
+                        {(item.matchedCard.variants?.length ?? 0) > 1 && (
+                          <label className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-300">
+                            Printing:
+                            <select
+                              value={item.matchedCard.priceVariant}
+                              onChange={(e) => handleVariantChange(idx, e.target.value)}
+                              className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] text-white"
+                            >
+                              {item.matchedCard.variants!.map((v) => (
+                                <option key={v.key} value={v.key}>
+                                  {v.label} ({fmt(v.price)})
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                        {(item.selectedCondition.includes('PSA') || item.selectedCondition.includes('BGS')) && (
+                          <p className="mt-1 text-[11px] text-amber-300">
+                            Graded card: this shows the raw-card price. The shop will confirm the value of the grade.
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -2035,27 +2031,16 @@ export default function CustomerDashboard({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    runAlternativeSearch(searchQuery, searchGame);
+                    runAlternativeSearch(searchQuery);
                   }
                 }}
-                placeholder="e.g. Charizard 4/102, Black Lotus, Dark Magician..."
+                placeholder="e.g. Charizard 4/102, Umbreon VMAX, Pikachu..."
                 className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
               />
-              <select
-                value={searchGame}
-                onChange={(e) => setSearchGame(e.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 text-xs text-white"
-                aria-label="Game"
-              >
-                <option value="any">All games</option>
-                <option value="Pokémon">Pokémon</option>
-                <option value="Magic: The Gathering">Magic</option>
-                <option value="Yu-Gi-Oh!">Yu-Gi-Oh!</option>
-              </select>
               <button
                 type="button"
                 disabled={isSearching}
-                onClick={() => runAlternativeSearch(searchQuery, searchGame)}
+                onClick={() => runAlternativeSearch(searchQuery)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-xs font-semibold rounded-lg"
               >
                 {isSearching ? 'Searching…' : 'Search'}

@@ -17,11 +17,11 @@ export default function HeroSection({ onGetStarted }: HeroSectionProps) {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-10 items-center">
           <div className="lg:col-span-5 max-w-xl">
             <span className="inline-block mb-3 sm:mb-4 text-[11px] sm:text-[12px] font-bold tracking-wider text-blue-700 uppercase">
-              Online buying pages for trading card shops
+              Online buying pages for Pokémon card shops
             </span>
 
             <h1 className="text-4xl sm:text-5xl lg:text-[52px] font-extrabold text-slate-900 tracking-tight leading-[1.08] mb-4 sm:mb-6">
-              Let collectors sell you their cards online.{' '}
+              Let collectors sell you their Pokémon cards online.{' '}
               <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent">
                 You make the offer.
               </span>

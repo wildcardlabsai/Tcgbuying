@@ -47,7 +47,7 @@ import {
   LiveSubmission,
   SubmittedCardItem,
 } from '../services/dealerSubmissionService';
-import { estimateCardPricing } from '../services/marketPricingService';
+import PriceGuide from './PriceGuide';
 import { signOutUser } from '../services/authService';
 import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
@@ -100,11 +100,6 @@ export default function DealerDashboard({
 
   // High-res photo inspection modal
   const [inspectedPhoto, setInspectedPhoto] = useState<{ url: string; title: string; meta?: string } | null>(null);
-
-  // Market Comp Tool state
-  const [compCardName, setCompCardName] = useState('Charizard Base Set');
-  const [compGame, setCompGame] = useState('Pokémon');
-  const [compResult, setCompResult] = useState(estimateCardPricing('Charizard Base Set', 'Pokémon', 'Raw NM'));
 
   const { fmt, symbol, offerText, currency, toGbp, fromGbp } = useMoney();
 
@@ -973,115 +968,8 @@ export default function DealerDashboard({
             </div>
           )}
 
-          {/* TAB 3: PRICE GUIDE */}
-          {activeTab === 'comps' && (
-            <div className="space-y-6 max-w-4xl">
-              <div className="border-b border-slate-800 pb-4">
-                <h2 className="text-xl font-black text-white">Rough Price Guide</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  A quick keyword-based estimate to sanity-check offers. These are NOT live eBay or marketplace prices; always check current sold listings before making an offer.
-                </p>
-              </div>
-
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Search Card Name
-                    </label>
-                    <input
-                      type="text"
-                      value={compCardName}
-                      onChange={(e) => setCompCardName(e.target.value)}
-                      placeholder="e.g. Charizard Base Set, Black Lotus, Blue-Eyes..."
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Game</label>
-                    <select
-                      value={compGame}
-                      onChange={(e) => setCompGame(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
-                    >
-                      <option value="Pokémon">Pokémon</option>
-                      <option value="Magic: The Gathering">Magic: The Gathering</option>
-                      <option value="Yu-Gi-Oh!">Yu-Gi-Oh!</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setCompResult(estimateCardPricing(compCardName, compGame, 'Raw NM'))}
-                  className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white"
-                >
-                  Get Estimate
-                </button>
-              </div>
-
-              {compResult && (
-                <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-bold text-white">{compResult.title}</h3>
-                      <p className="text-xs text-slate-400">
-                        {compResult.game} • {compResult.set} • {compResult.condition}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">Estimated Value</span>
-                      <span className="text-2xl font-black text-white">
-                        {fmt(compResult.ebayLastSoldAvg)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 bg-slate-950 p-4 rounded-lg border border-slate-800">
-                    <div>
-                      <span className="text-[10px] text-emerald-400 font-semibold uppercase tracking-wider block">
-                        Recommended Store Cash Offer (72%)
-                      </span>
-                      <span className="text-xl font-black text-emerald-400">
-                        {fmt(compResult.storeCashOffer)}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider block">
-                        Recommended Store Credit (84%)
-                      </span>
-                      <span className="text-xl font-black text-amber-400">
-                        {fmt(compResult.storeCreditOffer)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 pt-2">
-                    <span className="text-xs font-bold text-slate-300">Estimated Range:</span>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">Low</span>
-                        <span className="font-bold text-slate-200">{fmt(compResult.lowPrice)}</span>
-                      </div>
-                      <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">Average</span>
-                        <span className="font-bold text-white">{fmt(compResult.ebayLastSoldAvg)}</span>
-                      </div>
-                      <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">High</span>
-                        <span className="font-bold text-emerald-300">{fmt(compResult.highPrice)}</span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      Based on {compResult.recentSalesCount} recent verified sales • Last tracked {compResult.lastSoldDate}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* TAB 3: PRICE GUIDE (live Pokémon prices) */}
+          {activeTab === 'comps' && <PriceGuide storefront={storefront} />}
 
           {/* TAB 4: STORE SETTINGS & BUYLIST MARGINS */}
           {activeTab === 'reports' && <DealerReports submissions={submissions} />}

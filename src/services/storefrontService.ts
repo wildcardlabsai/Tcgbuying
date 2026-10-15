@@ -8,6 +8,7 @@ import { db, handleFirestoreError, OperationType } from '../firebase';
 import { IS_LOCAL } from '../config';
 import { readJson, writeJson } from './localStore';
 import { CurrencyCode, isCurrency, r2 } from './currency';
+import { ConditionFactors, DEFAULT_CONDITION_FACTORS } from './cardRecognitionService';
 
 export interface InfoBlock {
   title: string;
@@ -29,6 +30,8 @@ export interface PricingSettings {
   /** The shop's own currency: default display currency and the currency bulk rates are entered in. */
   currency: CurrencyCode;
   bulk: BulkRates;
+  /** Share of the Near Mint price paid for each played condition (0.82 = 82%). */
+  conditions: ConditionFactors;
 }
 
 export const DEFAULT_PRICING: PricingSettings = {
@@ -36,6 +39,7 @@ export const DEFAULT_PRICING: PricingSettings = {
   creditPercent: 84,
   currency: 'GBP',
   bulk: { commons: 0.012, holos: 0.05, ultraRares: 0.5, sealedPacks: 3.2 },
+  conditions: DEFAULT_CONDITION_FACTORS,
 };
 
 const num = (v: unknown, min: number, max: number, fallback: number) => {
@@ -49,6 +53,12 @@ export function sanitizePricing(raw: any): PricingSettings {
     cashPercent: num(raw?.cashPercent, 1, 100, d.cashPercent),
     creditPercent: num(raw?.creditPercent, 1, 150, d.creditPercent),
     currency: isCurrency(raw?.currency) ? raw.currency : d.currency,
+    conditions: {
+      lp: num(raw?.conditions?.lp, 0.05, 1, d.conditions.lp),
+      mp: num(raw?.conditions?.mp, 0.05, 1, d.conditions.mp),
+      hp: num(raw?.conditions?.hp, 0.05, 1, d.conditions.hp),
+      damaged: num(raw?.conditions?.damaged, 0.05, 1, d.conditions.damaged),
+    },
     bulk: {
       commons: r2(num(raw?.bulk?.commons, 0, 1000, d.bulk.commons) * 1000) / 1000,
       holos: r2(num(raw?.bulk?.holos, 0, 1000, d.bulk.holos) * 1000) / 1000,
@@ -152,7 +162,7 @@ const KEY = 'tcg_storefronts';
 /** Built-in content for the public sample shop (`/?shop=demo-shop`), used until a local demo dealer edits it. */
 export const DEMO_DEALER_ID = 'demo-dealer';
 const DEMO_STOREFRONT: Storefront = sanitizeStorefront({
-  tagline: 'We buy Pokémon, Magic & Yu-Gi-Oh! collections',
+  tagline: 'We buy Pokémon card collections',
   welcome:
     'Send us your cards for a fast, fair offer. Upload photos, see an estimate straight away, and we confirm the final price once we have seen them. Most offers are made within 24 hours.',
   accent: '#2563eb',
@@ -161,7 +171,7 @@ const DEMO_STOREFRONT: Storefront = sanitizeStorefront({
   address: 'Demo Card Shop\n12 Briggate\nLeeds LS1 6HD',
   hours: 'Mon–Sat 10am–5:30pm',
   infoBlocks: [
-    { title: 'What we buy', body: 'Pokémon, Magic: The Gathering and Yu-Gi-Oh! singles, binders and bulk. Sealed product too.' },
+    { title: 'What we buy', body: 'Pokémon singles, binders and bulk. Sealed product too.' },
     { title: 'How we pay', body: 'Bank transfer, PayPal or store credit (with a bonus). Payment within 2 working days of accepting.' },
     { title: 'Postage', body: 'Use a tracked, insured service. We return anything you decline, free of charge.' },
   ],

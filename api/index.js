@@ -69578,14 +69578,7 @@ ${link ? button(link, "Track your submission") : ""}`
 var USD_GBP = 0.78;
 var EUR_GBP = 0.86;
 var TIMEOUT_MS = 7e3;
-var UA = "TCGBuyer/1.0 (+https://tcgbuying.vercel.app)";
-function normaliseGame(game) {
-  const g = (game || "").toLowerCase();
-  if (g.includes("pok")) return "pokemon";
-  if (g.includes("magic") || g.includes("mtg")) return "mtg";
-  if (g.includes("yu") || g.includes("ygo")) return "ygo";
-  return "any";
-}
+var UA = "TCGBuyer/1.0 (+https://tcgbuyer.xyz)";
 var cache = /* @__PURE__ */ new Map();
 var CACHE_MS = 15 * 6e4;
 async function getJson(url, extraHeaders = {}) {
@@ -69605,8 +69598,7 @@ async function getJson(url, extraHeaders = {}) {
     return null;
   }
 }
-var TCGPLAYER_GAME = { pokemon: "pokemon", mtg: "magic", ygo: "yugioh" };
-var tcgplayerSearch = (game, name) => `https://www.tcgplayer.com/search/${TCGPLAYER_GAME[game]}/product?q=${encodeURIComponent(name)}`;
+var tcgplayerSearch = (_game, name) => `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(name)}`;
 var httpsOnly = (u) => typeof u === "string" && u.startsWith("https://") ? u : void 0;
 var esc2 = (s2) => s2.replace(/["\\]/g, " ").trim();
 var money = (n, rate) => {
@@ -69673,6 +69665,9 @@ async function searchTcgdex(o) {
       imageUrl: d.image ? `${d.image}/high.webp` : "",
       rawMarketPrice: price,
       priceKnown: price > 0,
+      priceSource: price > 0 ? "TCGdex (TCGplayer / Cardmarket)" : "",
+      variants: [],
+      priceVariant: "",
       tcgplayerUrl: tcgplayerSearch("pokemon", `${d.name} ${d.localId || ""}`.trim()),
       sourceUrl: `https://www.tcgdex.net/cards/en/${encodeURIComponent(d.id)}`
     };
@@ -69685,15 +69680,32 @@ async function searchPokemon(o, exactName) {
   ]);
   return primary.length ? primary : fallback;
 }
+var VARIANT_LABELS = {
+  normal: "Non-holo",
+  holofoil: "Holo",
+  reverseHolofoil: "Reverse holo",
+  "1stEditionHolofoil": "1st Edition holo",
+  "1stEditionNormal": "1st Edition",
+  unlimitedHolofoil: "Unlimited holo",
+  unlimitedNormal: "Unlimited"
+};
+function variantOrder(rarity) {
+  const holoFirst = /holo|ex\b|\bv\b|vmax|vstar|gx|illustration|secret|ultra|hyper|shiny|radiant|amazing|special/i.test(rarity);
+  return holoFirst ? ["holofoil", "unlimitedHolofoil", "1stEditionHolofoil", "normal", "unlimitedNormal", "1stEditionNormal", "reverseHolofoil"] : ["normal", "unlimitedNormal", "1stEditionNormal", "holofoil", "unlimitedHolofoil", "1stEditionHolofoil", "reverseHolofoil"];
+}
 function mapPokemon(p) {
   const prices = p.tcgplayer?.prices || {};
-  const order = ["holofoil", "1stEditionHolofoil", "unlimitedHolofoil", "reverseHolofoil", "normal", "1stEditionNormal", "unlimitedNormal"];
-  let price = 0;
-  for (const k of order) {
-    price = money(prices[k]?.market ?? prices[k]?.mid, USD_GBP);
-    if (price) break;
+  const variants = Object.keys(prices).map((key) => ({ key, label: VARIANT_LABELS[key] || key, price: money(prices[key]?.market ?? prices[key]?.mid, USD_GBP) })).filter((v) => v.price > 0);
+  const chosenKey = variantOrder(p.rarity || "").find((k) => variants.some((v) => v.key === k)) || variants[0]?.key || "";
+  const chosen = variants.find((v) => v.key === chosenKey);
+  const cardmarket = money(p.cardmarket?.prices?.averageSellPrice ?? p.cardmarket?.prices?.trendPrice, EUR_GBP);
+  let price = chosen?.price ?? 0;
+  let source = chosen ? "TCGplayer" : "";
+  if (!price && cardmarket) {
+    price = cardmarket;
+    source = "Cardmarket";
   }
-  if (!price) price = money(p.cardmarket?.prices?.averageSellPrice ?? p.cardmarket?.prices?.trendPrice, EUR_GBP);
+  const disagree = Boolean(chosen && cardmarket) && (chosen.price / cardmarket > 1.4 || chosen.price / cardmarket < 0.7);
   return {
     id: `pkmn-${p.id}`,
     name: p.name,
@@ -69704,70 +69716,18 @@ function mapPokemon(p) {
     imageUrl: p.images?.large || p.images?.small || "",
     rawMarketPrice: price,
     priceKnown: price > 0,
+    priceSource: source,
+    priceUpdated: chosen ? p.tcgplayer?.updatedAt : p.cardmarket?.updatedAt,
+    priceLow: chosen ? money(prices[chosenKey]?.low, USD_GBP) || void 0 : void 0,
+    priceHigh: chosen ? money(prices[chosenKey]?.high, USD_GBP) || void 0 : void 0,
+    variants,
+    priceVariant: chosenKey,
+    cardmarketPrice: cardmarket || void 0,
+    priceDisagree: disagree || void 0,
     tcgplayerUrl: httpsOnly(p.tcgplayer?.url) || tcgplayerSearch("pokemon", `${p.name} ${p.number || ""}`.trim()),
     cardmarketUrl: httpsOnly(p.cardmarket?.url),
     sourceUrl: `https://pokemontcg.io/card-search?q=${encodeURIComponent(p.id)}`
   };
-}
-async function searchMtg(o, exactName) {
-  const q = exactName ? `!"${esc2(o.q)}"` : esc2(o.q);
-  const json2 = await getJson(
-    `https://api.scryfall.com/cards/search?unique=prints&order=released&dir=desc&q=${encodeURIComponent(q)}`
-  );
-  let rows = json2?.data || [];
-  if (!rows.length && exactName) {
-    const fuzzy = await getJson(`https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(o.q)}`);
-    if (fuzzy?.id) rows = [fuzzy];
-  }
-  if (o.set) {
-    const wanted = o.set.toLowerCase();
-    rows.sort((a, b) => Number(b.set_name?.toLowerCase() === wanted) - Number(a.set_name?.toLowerCase() === wanted));
-  }
-  return rows.slice(0, o.limit ?? 8).map((c) => {
-    const price = money(c.prices?.usd ?? c.prices?.usd_foil ?? c.prices?.usd_etched, USD_GBP);
-    return {
-      id: `mtg-${c.id}`,
-      name: c.name,
-      game: "Magic: The Gathering",
-      setName: c.set_name || "",
-      cardNumber: c.collector_number || "",
-      rarity: c.rarity ? c.rarity.charAt(0).toUpperCase() + c.rarity.slice(1) : "",
-      imageUrl: c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal || "",
-      rawMarketPrice: price,
-      priceKnown: price > 0,
-      tcgplayerUrl: httpsOnly(c.purchase_uris?.tcgplayer) || tcgplayerSearch("mtg", c.name),
-      cardmarketUrl: httpsOnly(c.purchase_uris?.cardmarket),
-      sourceUrl: httpsOnly(c.scryfall_uri)
-    };
-  });
-}
-async function searchYgo(o, exactName) {
-  const param = exactName ? "name" : "fname";
-  let json2 = await getJson(`https://db.ygoprodeck.com/api/v7/cardinfo.php?${param}=${encodeURIComponent(o.q)}`);
-  if (!json2?.data && exactName) {
-    json2 = await getJson(`https://db.ygoprodeck.com/api/v7/cardinfo.php?fname=${encodeURIComponent(o.q)}`);
-  }
-  const out = [];
-  for (const card of (json2?.data || []).slice(0, o.limit ?? 8)) {
-    const price = money(card.card_prices?.[0]?.tcgplayer_price, USD_GBP);
-    const sets = card.card_sets || [];
-    const wanted = o.set?.toLowerCase();
-    const set = wanted && sets.find((s2) => s2.set_name?.toLowerCase() === wanted) || sets[0];
-    out.push({
-      id: `ygo-${card.id}`,
-      name: card.name,
-      game: "Yu-Gi-Oh!",
-      setName: set?.set_name || "",
-      cardNumber: set?.set_code || "",
-      rarity: set?.set_rarity || "",
-      imageUrl: card.card_images?.[0]?.image_url || "",
-      rawMarketPrice: price,
-      priceKnown: price > 0,
-      tcgplayerUrl: tcgplayerSearch("ygo", set?.set_code || card.name),
-      sourceUrl: httpsOnly(card.ygoprodeck_url)
-    });
-  }
-  return out;
 }
 function similarity(a, b) {
   if (!a || !b) return 0;
@@ -69798,12 +69758,7 @@ async function searchCards(o, exactName = false) {
   const q = o.q.trim();
   if (!q) return [];
   const opts = { ...o, q };
-  const game = normaliseGame(o.game);
-  const jobs = [];
-  if (game === "pokemon" || game === "any") jobs.push(searchPokemon(opts, exactName));
-  if (game === "mtg" || game === "any") jobs.push(searchMtg(opts, exactName));
-  if (game === "ygo" || game === "any") jobs.push(searchYgo(opts, exactName));
-  const results = (await Promise.all(jobs.map((j) => j.catch(() => [])))).flat();
+  const results = await searchPokemon(opts, exactName).catch(() => []);
   return results.map((c) => ({ c, s: score(c, opts) })).sort((a, b) => b.s - a.s).map((x2) => x2.c).slice(0, o.limit ?? 8);
 }
 async function findMatches(name, game, set, number, limit = 6, fuzzy = false) {
@@ -69883,6 +69838,44 @@ ${full}`;
   return { names, number, setCode, gameHint };
 }
 
+// server/pricecharting.ts
+var USD_GBP2 = 0.78;
+async function withPriceCharting(card) {
+  const key = process.env.PRICECHARTING_API_KEY;
+  if (!key || !card.name) return card;
+  const number = card.cardNumber.split("/")[0];
+  const query = `pokemon ${card.setName} ${card.name} ${number}`.trim();
+  try {
+    const res = await fetch(`https://www.pricecharting.com/api/product?t=${encodeURIComponent(key)}&q=${encodeURIComponent(query)}`, {
+      signal: AbortSignal.timeout(6e3),
+      headers: { Accept: "application/json" }
+    });
+    if (!res.ok) return card;
+    const j = await res.json();
+    const cents = Number(j?.["loose-price"]);
+    if (j?.status === "error" || !Number.isFinite(cents) || cents <= 0) return card;
+    const gbp = Math.round(cents / 100 * USD_GBP2 * 100) / 100;
+    const out = {
+      ...card,
+      pricechartingPrice: gbp,
+      pricechartingUrl: `https://www.pricecharting.com/search-products?type=prices&q=${encodeURIComponent(query)}`
+    };
+    if (process.env.PRICE_PRIMARY === "pricecharting") {
+      out.rawMarketPrice = gbp;
+      out.priceKnown = true;
+      out.priceSource = "PriceCharting";
+      out.priceLow = void 0;
+      out.priceHigh = void 0;
+    } else if (card.rawMarketPrice > 0) {
+      const ratio = card.rawMarketPrice / gbp;
+      if (ratio > 1.4 || ratio < 0.7) out.priceDisagree = true;
+    }
+    return out;
+  } catch {
+    return card;
+  }
+}
+
 // server/app.ts
 import_dotenv.default.config();
 var app = (0, import_express2.default)();
@@ -69898,155 +69891,24 @@ if (geminiApiKey) {
     console.warn("GoogleGenAI init note:", err);
   }
 }
-var BENCHMARK_CARDS = [
-  {
-    id: "pkmn-charizard-base",
-    name: "Charizard",
-    game: "Pok\xE9mon",
-    setName: "Base Set",
-    cardNumber: "4/102",
-    rarity: "Holo Rare",
-    imageUrl: "https://images.pokemontcg.io/base1/4_hires.png",
-    rawMarketPrice: 285,
-    gradedPsa9Price: 1100,
-    gradedPsa10Price: 9400,
-    ebaySoldComps: [
-      { title: "1999 Pokemon Base Set Charizard Holo 4/102 Unlimited Raw NM", price: 295, date: "14 Oct 2026", condition: "Raw NM" },
-      { title: "Charizard 4/102 Base Set Holo Clean Vintage Pokemon", price: 275, date: "11 Oct 2026", condition: "Raw LP" },
-      { title: "Pokemon Base Set Unlimited Charizard 4/102 Holo Rare PSA 9 Mint", price: 1050, date: "08 Oct 2026", condition: "PSA 9" }
-    ]
-  },
-  {
-    id: "pkmn-pikachu-illustrator",
-    name: "Pikachu Illustrator",
-    game: "Pok\xE9mon",
-    setName: "CoroCoro Promo",
-    cardNumber: "Promo",
-    rarity: "Illustration Rare",
-    imageUrl: "https://images.pokemontcg.io/swsh12pt5/160_hires.png",
-    rawMarketPrice: 4500,
-    gradedPsa9Price: 35e3,
-    gradedPsa10Price: 12e4,
-    ebaySoldComps: [
-      { title: "Pokemon Japanese Promo Pikachu Illustrator CoroCoro Slab", price: 42e3, date: "09 Oct 2026", condition: "PSA 9" },
-      { title: "Pokemon Pikachu Special Promo Holo Foil Mint", price: 4800, date: "02 Oct 2026", condition: "Raw NM" }
-    ]
-  },
-  {
-    id: "pkmn-mewtwo-gx",
-    name: "Mewtwo & Mew GX",
-    game: "Pok\xE9mon",
-    setName: "Unified Minds",
-    cardNumber: "71/236",
-    rarity: "Ultra Rare",
-    imageUrl: "https://images.pokemontcg.io/sm11/71_hires.png",
-    rawMarketPrice: 85,
-    gradedPsa9Price: 140,
-    gradedPsa10Price: 320,
-    ebaySoldComps: [
-      { title: "Mewtwo & Mew GX 71/236 Unified Minds Full Art Tag Team", price: 82, date: "13 Oct 2026", condition: "Raw NM" },
-      { title: "Mewtwo & Mew GX Tag Team Unified Minds Mint PSA 10", price: 315, date: "07 Oct 2026", condition: "PSA 10" }
-    ]
-  },
-  {
-    id: "pkmn-umbreon-vmax",
-    name: "Umbreon VMAX Alternate Art",
-    game: "Pok\xE9mon",
-    setName: "Evolving Skies",
-    cardNumber: "215/203",
-    rarity: "Secret Rare Alt Art",
-    imageUrl: "https://images.pokemontcg.io/swsh7/215_hires.png",
-    rawMarketPrice: 680,
-    gradedPsa9Price: 750,
-    gradedPsa10Price: 1450,
-    ebaySoldComps: [
-      { title: "Umbreon VMAX Alt Art 215/203 Evolving Skies Moonbreon Raw NM", price: 690, date: "14 Oct 2026", condition: "Raw NM" },
-      { title: "Pokemon Moonbreon Umbreon VMAX Secret Alt Art PSA 10 Gem Mint", price: 1420, date: "10 Oct 2026", condition: "PSA 10" },
-      { title: "Umbreon VMAX 215/203 Evolving Skies Alternate Art NM", price: 660, date: "05 Oct 2026", condition: "Raw NM" }
-    ]
-  },
-  {
-    id: "mtg-black-lotus",
-    name: "Black Lotus",
-    game: "Magic: The Gathering",
-    setName: "Unlimited Edition",
-    cardNumber: "Artifact",
-    rarity: "Rare",
-    imageUrl: "https://cards.scryfall.io/large/front/b/d/bd8fa327-dd41-4737-8f19-2cf5eb1f7cdd.jpg",
-    rawMarketPrice: 8500,
-    gradedPsa9Price: 19500,
-    gradedPsa10Price: 65e3,
-    ebaySoldComps: [
-      { title: "MTG Magic Black Lotus Unlimited Rare Artifact MP-LP Authentic", price: 7900, date: "12 Oct 2026", condition: "Raw MP" },
-      { title: "Black Lotus Unlimited Edition Magic The Gathering BGS 8.5", price: 16500, date: "04 Oct 2026", condition: "BGS 8.5" }
-    ]
-  },
-  {
-    id: "mtg-mana-crypt",
-    name: "Mana Crypt",
-    game: "Magic: The Gathering",
-    setName: "Double Masters",
-    cardNumber: "Artifact",
-    rarity: "Mythic Rare",
-    imageUrl: "https://cards.scryfall.io/large/front/4/d/4d960186-4559-4af0-bd22-63baa15f8939.jpg",
-    rawMarketPrice: 145,
-    gradedPsa9Price: 220,
-    gradedPsa10Price: 480,
-    ebaySoldComps: [
-      { title: "Mana Crypt Double Masters Foil Borderless Artifact NM", price: 155, date: "14 Oct 2026", condition: "Raw NM" },
-      { title: "MTG Mana Crypt 2XM Mythic Foil NM", price: 140, date: "09 Oct 2026", condition: "Raw NM" }
-    ]
-  },
-  {
-    id: "ygo-blue-eyes",
-    name: "Blue-Eyes White Dragon",
-    game: "Yu-Gi-Oh!",
-    setName: "Legend of Blue Eyes White Dragon",
-    cardNumber: "LOB-001",
-    rarity: "Ultra Rare",
-    imageUrl: "https://images.ygoprodeck.com/images/cards/89631139.jpg",
-    rawMarketPrice: 240,
-    gradedPsa9Price: 680,
-    gradedPsa10Price: 3200,
-    ebaySoldComps: [
-      { title: "Yu-Gi-Oh LOB-001 Blue-Eyes White Dragon Ultra Rare Vintage NM", price: 250, date: "13 Oct 2026", condition: "Raw NM" },
-      { title: "Blue-Eyes White Dragon LOB Unlimited 1st Foil PSA 9", price: 650, date: "07 Oct 2026", condition: "PSA 9" }
-    ]
-  },
-  {
-    id: "ygo-dark-magician",
-    name: "Dark Magician",
-    game: "Yu-Gi-Oh!",
-    setName: "Legend of Blue Eyes White Dragon",
-    cardNumber: "LOB-005",
-    rarity: "Ultra Rare",
-    imageUrl: "https://images.ygoprodeck.com/images/cards/46986414.jpg",
-    rawMarketPrice: 110,
-    gradedPsa9Price: 280,
-    gradedPsa10Price: 1150,
-    ebaySoldComps: [
-      { title: "Dark Magician LOB-005 Ultra Rare Clean Foil YuGiOh", price: 105, date: "11 Oct 2026", condition: "Raw NM" },
-      { title: "YuGiOh Dark Magician LOB-005 PSA 9 Mint Vintage", price: 275, date: "03 Oct 2026", condition: "PSA 9" }
-    ]
-  }
-];
 async function fetchCardFromFreeApis(cardName, game, setName, cardNumber) {
   const hits2 = await findMatches(cardName, game, setName, cardNumber);
   if (hits2[0]) return { ...hits2[0], alternatives: hits2.slice(1, 4) };
   const wanted = cardName.toLowerCase();
-  const found = BENCHMARK_CARDS.find((c) => c.name.toLowerCase() === wanted);
-  if (found) return { ...found, alternatives: [] };
   return {
     id: `card-${wanted.replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
     name: cardName,
-    game: game || "Other",
+    game: "Pok\xE9mon",
     setName: setName || "",
     cardNumber: cardNumber || "",
     rarity: "",
     imageUrl: "",
     rawMarketPrice: 0,
     priceKnown: false,
-    tcgplayerUrl: `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(cardName)}`,
+    priceSource: "",
+    variants: [],
+    priceVariant: "",
+    tcgplayerUrl: `https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(cardName)}`,
     alternatives: []
   };
 }
@@ -70055,15 +69917,25 @@ function toMatchedPayload(c) {
   return {
     id: c.id,
     name: c.name,
-    game: c.game,
+    game: "Pok\xE9mon",
     setName: c.setName,
     cardNumber: c.cardNumber,
     rarity: c.rarity,
     imageUrl: c.imageUrl,
     tcgplayerUrl: c.tcgplayerUrl,
     cardmarketUrl: c.cardmarketUrl,
+    pricechartingUrl: c.pricechartingUrl,
     sourceUrl: c.sourceUrl,
     marketPrice: price,
+    priceSource: c.priceSource,
+    priceUpdated: c.priceUpdated,
+    priceLow: c.priceLow,
+    priceHigh: c.priceHigh,
+    variants: c.variants,
+    priceVariant: c.priceVariant,
+    cardmarketPrice: c.cardmarketPrice,
+    pricechartingPrice: c.pricechartingPrice,
+    priceDisagree: c.priceDisagree,
     storeCashOffer: Math.round(price * 0.72 * 100) / 100,
     storeCreditOffer: Math.round(price * 0.84 * 100) / 100,
     ebayLastSoldAvg: price,
@@ -70175,35 +70047,24 @@ app.post("/api/recognize-card", async (req, res) => {
     let isGraded = false;
     let confidence = 0.94;
     let notes = "Card artwork matched against official reference archive.";
-    const hintOrUrlMatch = BENCHMARK_CARDS.find(
-      (b) => userHint && b.name.toLowerCase().includes(userHint.toLowerCase()) || typeof imageBase64 === "string" && (imageBase64.includes(b.imageUrl) || b.name && imageBase64.toLowerCase().includes(b.name.toLowerCase()))
-    );
-    if (hintOrUrlMatch) {
-      detectedName = hintOrUrlMatch.name;
-      detectedGame = hintOrUrlMatch.game;
-      detectedSet = hintOrUrlMatch.setName;
-      detectedNumber = hintOrUrlMatch.cardNumber;
-      detectedRarity = hintOrUrlMatch.rarity;
-      confidence = 0.98;
-    }
     if (aiClient && resolved.base64 && resolved.base64.length > 50) {
       try {
-        const prompt = `Analyze this collectible trading card photograph carefully.
+        const prompt = `You identify Pok\xE9mon Trading Card Game cards from a photograph.
 Read the printed card name and the collector number printed on the card (usually bottom corner) EXACTLY as written; never guess a different card. If a field is not visible, return an empty string for it.
+First decide whether this is a Pok\xE9mon TCG card. If it is any other kind of card (Magic: The Gathering, Yu-Gi-Oh!, sports cards, etc.) or not a trading card, set "isPokemonCard" to false and leave the other fields empty.
 Identify:
-1. Exact card name (e.g. "Charizard", "Pikachu Illustrator", "Black Lotus", "Blue-Eyes White Dragon", "Umbreon VMAX").
-2. Game category: choose exactly one ("Pok\xE9mon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", "Lorcana", "Other").
-3. Set / Expansion name if visible (e.g. "Base Set", "Evolving Skies", "Unlimited", "Legend of Blue Eyes", "Alpha").
-4. Card number or collector number (e.g. "4/102", "215/203", "LOB-001").
-5. Rarity (e.g. "Holo Rare", "Secret Rare", "Ultra Rare", "Mythic Rare", "Common").
-6. Visual condition: ("Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", or "Graded PSA 9/10").
-7. Is this in a graded acrylic slab (PSA, BGS, CGC)? (true/false).
-8. Confidence score between 0.0 and 1.0.
+1. Exact card name as printed (e.g. "Charizard", "Umbreon VMAX", "Pikachu").
+2. Set / expansion name if visible (e.g. "Base Set", "Evolving Skies").
+3. Card number as printed (e.g. "4/102", "215/203", "SWSH123").
+4. Rarity if visible (e.g. "Rare Holo", "Secret Rare", "Common").
+5. Visual condition: ("Near Mint", "Lightly Played", "Moderately Played", "Heavily Played", or "Graded PSA 9/10").
+6. Is this in a graded slab (PSA, BGS, CGC)? (true/false).
+7. Confidence score between 0.0 and 1.0.
 
 Format your response as valid JSON ONLY without markdown backticks:
 {
+  "isPokemonCard": true,
   "name": "...",
-  "game": "...",
   "set": "...",
   "number": "...",
   "rarity": "...",
@@ -70232,8 +70093,11 @@ Format your response as valid JSON ONLY without markdown backticks:
         const jsonMatch = textOutput.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
+          if (parsed.isPokemonCard === false) {
+            res.status(422).json({ success: false, error: "not_pokemon" });
+            return;
+          }
           detectedName = parsed.name || detectedName;
-          detectedGame = parsed.game || detectedGame;
           detectedSet = parsed.set || detectedSet;
           detectedNumber = parsed.number || detectedNumber;
           detectedRarity = parsed.rarity || detectedRarity;
@@ -70246,13 +70110,13 @@ Format your response as valid JSON ONLY without markdown backticks:
         console.warn("Gemini vision detection warning:", geminiError);
         if (userHint) {
           detectedName = userHint;
-        } else if (!hintOrUrlMatch) {
+        } else {
           const { status, body } = aiErrorResponse(geminiError);
           res.status(status).json(body);
           return;
         }
       }
-    } else if (!hintOrUrlMatch) {
+    } else if (!userHint) {
       res.status(503).json({ success: false, error: "recognition_unavailable" });
       return;
     }
@@ -70260,43 +70124,24 @@ Format your response as valid JSON ONLY without markdown backticks:
       res.status(422).json({ success: false, error: "card_not_identified" });
       return;
     }
-    const matchedData = await fetchCardFromFreeApis(detectedName, detectedGame, detectedSet, detectedNumber);
-    const basePrice = matchedData.rawMarketPrice ?? 0;
-    const finalMarketPrice = isGraded ? Math.round(basePrice * 3.5) : basePrice;
-    const storeCashOffer = Math.round(finalMarketPrice * 0.72);
-    const storeCreditOffer = Math.round(finalMarketPrice * 0.84);
-    const ebayRecentComps = [];
+    const resolvedCard = await fetchCardFromFreeApis(detectedName, "Pok\xE9mon", detectedSet, detectedNumber);
+    const matchedData = await withPriceCharting(resolvedCard);
+    const gradedNote = isGraded ? " This looks like a graded card: the price shown is for the raw card, and the shop will price the grade itself." : "";
     res.json({
       success: true,
       detection: {
         name: detectedName,
-        game: detectedGame,
+        game: "Pok\xE9mon",
         setName: detectedSet,
         cardNumber: detectedNumber,
         rarity: detectedRarity,
         condition: detectedCondition,
         isGraded,
         confidence,
-        notes
+        notes: `${notes}${gradedNote}`
       },
-      matchedCard: {
-        id: matchedData.id,
-        name: matchedData.name,
-        game: matchedData.game,
-        setName: matchedData.setName || detectedSet,
-        cardNumber: matchedData.cardNumber || detectedNumber,
-        rarity: matchedData.rarity || detectedRarity,
-        imageUrl: matchedData.imageUrl,
-        tcgplayerUrl: matchedData.tcgplayerUrl,
-        cardmarketUrl: matchedData.cardmarketUrl,
-        sourceUrl: matchedData.sourceUrl,
-        marketPrice: finalMarketPrice,
-        storeCashOffer,
-        storeCreditOffer,
-        ebayLastSoldAvg: finalMarketPrice,
-        ebayRecentComps
-      },
-      alternatives: matchedData.alternatives.map(toMatchedPayload)
+      matchedCard: toMatchedPayload(matchedData),
+      alternatives: resolvedCard.alternatives.map(toMatchedPayload)
     });
   } catch (error) {
     console.error("Card recognition error:", error);
@@ -70318,12 +70163,12 @@ app.post("/api/recognize-multi-cards", async (req, res) => {
     let multiScanError = null;
     if (aiClient && resolved.base64 && resolved.base64.length > 50) {
       try {
-        const prompt = `Analyze this trading card image carefully.
+        const prompt = `Analyze this image of Pok\xE9mon Trading Card Game cards carefully.
 This photo may contain MULTIPLE cards (e.g. a 9-pocket binder page, a 4-card spread, or tabletop card grid).
-Detect and identify EACH individual card in the photo.
+Detect and identify EACH individual Pok\xE9mon card in the photo. Ignore any card that is not a Pok\xE9mon card.
 For each card, determine:
-- name: Exact card name
-- game: "Pok\xE9mon", "Magic: The Gathering", "Yu-Gi-Oh!", "One Piece", or "Lorcana"
+- name: Exact card name as printed
+- game: always "Pok\xE9mon"
 - set: Set or expansion name if visible
 - number: Collector number (e.g. 4/102)
 - rarity: Rarity description
@@ -70430,32 +70275,13 @@ Return valid JSON ONLY without markdown backticks:
     }
     const cardsWithPricing = await Promise.all(
       detectedCards.map(async (dc) => {
-        const matched = await fetchCardFromFreeApis(dc.name, dc.game, dc.set, dc.number);
-        const basePrice = matched.rawMarketPrice ?? 0;
-        const storeCashOffer = Math.round(basePrice * 0.72);
-        const storeCreditOffer = Math.round(basePrice * 0.84);
+        const matched = await fetchCardFromFreeApis(dc.name, "Pok\xE9mon", dc.set, dc.number);
         return {
           detection: {
             ...dc,
             notes: `Detected at ${dc.position || "Grid slot"}`
           },
-          matchedCard: {
-            id: matched.id,
-            name: matched.name,
-            game: matched.game,
-            setName: matched.setName || dc.set,
-            cardNumber: matched.cardNumber || dc.number,
-            rarity: matched.rarity || dc.rarity,
-            imageUrl: matched.imageUrl,
-            tcgplayerUrl: matched.tcgplayerUrl,
-            cardmarketUrl: matched.cardmarketUrl,
-            sourceUrl: matched.sourceUrl,
-            marketPrice: basePrice,
-            storeCashOffer,
-            storeCreditOffer,
-            ebayLastSoldAvg: basePrice,
-            ebayRecentComps: []
-          }
+          matchedCard: toMatchedPayload(matched)
         };
       })
     );
@@ -70506,27 +70332,13 @@ app.post("/api/parse-buylist", async (req, res) => {
       else if (/\b(mp|moderately played)\b/i.test(cardQuery)) condition = "Moderately Played";
       else if (/\b(hp|heavily played)\b/i.test(cardQuery)) condition = "Heavily Played";
       const cleanName = cardQuery.replace(/#\d+\/\d+/g, "").replace(/\b(psa\s*\d+|nm|lp|mp|hp|holo|rare)\b/gi, "").trim();
-      const matched = await fetchCardFromFreeApis(cleanName || cardQuery, defaultGame);
-      const isGraded = condition.includes("PSA");
-      const basePrice = matched.rawMarketPrice ?? 0;
-      const finalPrice = isGraded ? Math.round(basePrice * (condition.includes("10") ? 3.8 : 2.2)) : basePrice;
-      const storeCashOffer = Math.round(finalPrice * 0.72);
-      const storeCreditOffer = Math.round(finalPrice * 0.84);
+      const matched = await fetchCardFromFreeApis(cleanName || cardQuery, "Pok\xE9mon");
+      const finalPrice = matched.rawMarketPrice ?? 0;
       for (let q = 0; q < qty; q++) {
         parsedItems.push({
+          ...toMatchedPayload(matched),
           id: `${matched.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          name: matched.name,
-          game: matched.game,
-          setName: matched.setName || "Standard Expansion",
-          cardNumber: matched.cardNumber || "",
-          rarity: matched.rarity || "Rare",
-          imageUrl: matched.imageUrl,
-          condition,
-          marketPrice: finalPrice,
-          storeCashOffer,
-          storeCreditOffer,
-          ebayLastSoldAvg: finalPrice,
-          ebayRecentComps: []
+          condition
         });
       }
     }
@@ -70542,16 +70354,14 @@ app.post("/api/parse-buylist", async (req, res) => {
 });
 app.get("/api/search-cards", async (req, res) => {
   const raw = String(req.query.q || "").slice(0, 100).trim();
-  const game = String(req.query.game || "any");
   if (!raw) {
     res.json({ results: [] });
     return;
   }
   const { name, number } = splitQuery(raw);
-  const results = await searchCards({ q: name, game, number, limit: 10 });
-  res.json({
-    results: results.map((c) => ({ ...c, marketPrice: c.rawMarketPrice }))
-  });
+  const results = await searchCards({ q: name, game: "Pok\xE9mon", number, limit: 10 });
+  const enriched = results.length ? [await withPriceCharting(results[0]), ...results.slice(1)] : results;
+  res.json({ results: enriched.map(toMatchedPayload) });
 });
 app.post("/api/identify-from-text", async (req, res) => {
   const top = String(req.body?.top ?? "").slice(0, 2e3);
@@ -70562,7 +70372,7 @@ app.post("/api/identify-from-text", async (req, res) => {
     res.status(422).json({ success: false, error: "card_not_identified" });
     return;
   }
-  const game = parsed.gameHint === "pokemon" ? "Pok\xE9mon" : parsed.gameHint === "ygo" ? "Yu-Gi-Oh!" : "any";
+  const game = "Pok\xE9mon";
   const names = parsed.names.slice(0, 4);
   const results = await Promise.all(
     names.map(async (name) => ({
@@ -70575,7 +70385,8 @@ app.post("/api/identify-from-text", async (req, res) => {
     res.status(422).json({ success: false, error: "card_not_identified" });
     return;
   }
-  const [top1, ...rest] = best.cards;
+  const [first, ...rest] = best.cards;
+  const top1 = await withPriceCharting(first);
   const numberMatched = Boolean(parsed.number) && top1.cardNumber.split("/")[0] === parsed.number.split("/")[0];
   res.json({
     success: true,

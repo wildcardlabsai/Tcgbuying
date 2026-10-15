@@ -71,3 +71,17 @@
     break-inside: avoid;
   }
 }
+
+/* iOS Safari zooms the page whenever a form field under 16px is focused, and does not zoom back out.
+   Keep every text field at 16px on phones so focusing or typing never changes the zoom level. */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}

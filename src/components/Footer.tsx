@@ -26,7 +26,7 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
             <Logo size="sm" />
             <span className="hidden sm:inline text-slate-300">|</span>
             <p className="text-slate-500 text-xs">
-              Online buying pages for trading card shops.
+              Online buying pages for Pokémon card shops.
             </p>
           </div>
 

@@ -27,6 +27,7 @@ interface BuylistSettingsProps {
 const field =
   'w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500';
 const label = 'block text-xs font-semibold text-slate-300 mb-1';
+const label_ = label;
 
 type BulkKey = keyof PricingSettings['bulk'];
 const BULK_ROWS: { key: BulkKey; title: string; hint: string; step: string }[] = [
@@ -178,6 +179,37 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
       </section>
 
       <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-white">Condition adjustments</h3>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Prices are for Near Mint. Set what share of that price you pay for played cards. Graded slabs are not adjusted automatically: you price those yourself when you review.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {([
+            ['lp', 'Lightly played'],
+            ['mp', 'Moderately played'],
+            ['hp', 'Heavily played'],
+            ['damaged', 'Damaged'],
+          ] as const).map(([key, label]) => (
+            <div key={key}>
+              <label className={label_} htmlFor={`bs-cond-${key}`}>{label} (%)</label>
+              <input
+                id={`bs-cond-${key}`}
+                type="number"
+                min={5}
+                max={100}
+                step={1}
+                className={field}
+                value={Math.round(pricing.conditions[key] * 100)}
+                onChange={(e) => patch({ conditions: { ...pricing.conditions, [key]: Number(e.target.value) / 100 } })}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-bold text-white">Bulk rates (cash)</h3>
           <div className="flex items-center gap-2">
@@ -259,7 +291,7 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
         <details className="text-xs text-slate-400">
           <summary className="cursor-pointer text-slate-300 font-semibold">Paste a list</summary>
           <p className="mt-2">One card per line: <code className="text-slate-300">Name, Set (optional), Cash price, Credit price (optional)</code></p>
-          <textarea className={`${field} mt-2`} rows={4} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'Charizard, Base Set, 220, 250\nBlack Lotus, Alpha, 5000'} aria-label="Paste buylist" />
+          <textarea className={`${field} mt-2`} rows={4} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'Charizard, Base Set, 220, 250\nUmbreon VMAX, Evolving Skies, 110'} aria-label="Paste buylist" />
           <button type="button" onClick={importLines} className="mt-2 px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-white">Import</button>
           {importMsg && <p className="mt-2 text-emerald-400">{importMsg}</p>}
         </details>

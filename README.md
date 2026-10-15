@@ -1,6 +1,6 @@
 # TCGBuyer
 
-Buying software for trading card shops: each dealer gets a customer buying portal
+Buying software for Pokémon card shops: each dealer gets a customer buying portal
 (`/?shop=<slug>`) and a dashboard for reviewing submissions and sending offers.
 
 ## Run locally
@@ -34,7 +34,7 @@ npm run build            # production bundle in dist/
 - Vercel limits request bodies to ~4.5 MB; photos are downscaled in the browser before upload.
 
 ## Notes
-- Card values are estimates from public sources (Pokémon TCG API, Scryfall, YGOPRODeck) converted with a flat factor, not live eBay sold data.
+- Card values come from TCGplayer market prices (via the Pokémon TCG API, with TCGdex as a fallback) and are cross-checked against Cardmarket, converted with a flat factor. They are not eBay sold prices (eBay's sold-data API is restricted to approved partners). Set `PRICECHARTING_API_KEY` (paid) to show PriceCharting alongside, and `PRICE_PRIMARY=pricecharting` to base offers on it.
 - `LegalModal.tsx` holds draft Terms and Privacy text. Have it reviewed by a professional and add your company details before launch.
 
 ## Photo recognition

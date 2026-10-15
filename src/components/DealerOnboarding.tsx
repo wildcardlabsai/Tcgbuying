@@ -25,7 +25,7 @@ const COUNTRIES: [string, string][] = [
   ['NL', 'Netherlands'],
   ['OT', 'Other'],
 ];
-const GAMES = ['Pokémon', 'Magic: The Gathering', 'Yu-Gi-Oh!', 'One Piece', 'Disney Lorcana', 'Sports cards', 'Other'];
+const PRODUCTS = ['Raw singles', 'Graded cards (PSA, BGS, CGC)', 'Binders and collections', 'Bulk commons and uncommons', 'Sealed product', 'Japanese cards'];
 const METHODS = ['In store', 'Facebook / Instagram messages', 'eBay / marketplaces', 'Discord / WhatsApp', 'Email / website form', "I don't buy collections yet"];
 const VOLUMES = [
   ['new', "Just starting / not sure yet"],
@@ -51,7 +51,7 @@ export default function DealerOnboarding({ onBackToHome, onSignIn, onOpenLegal }
   const [ownerName, setOwnerName] = useState('');
   const [country, setCountry] = useState('GB');
   const [shopType, setShopType] = useState<'physical' | 'online' | 'both'>('physical');
-  const [games, setGames] = useState<string[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
   const [monthlyVolume, setMonthlyVolume] = useState('new');
   const [currentMethods, setCurrentMethods] = useState<string[]>([]);
   const [website, setWebsite] = useState('');
@@ -66,7 +66,7 @@ export default function DealerOnboarding({ onBackToHome, onSignIn, onOpenLegal }
   const nextStep = (e: React.FormEvent) => {
     e.preventDefault();
     if (!shopName.trim() || !ownerName.trim()) return setError('Please enter your shop name and your name.');
-    if (games.length === 0) return setError('Choose at least one game you buy.');
+    if (products.length === 0) return setError('Choose at least one thing you buy.');
     setError(null);
     setStep(2);
   };
@@ -79,7 +79,7 @@ export default function DealerOnboarding({ onBackToHome, onSignIn, onOpenLegal }
     setError(null);
     setBusy(true);
     try {
-      await signUpDealer({ shopName, ownerName, email, password, phone, country, shopType, games, monthlyVolume, currentMethods, website, heardFrom });
+      await signUpDealer({ shopName, ownerName, email, password, phone, country, shopType, products, monthlyVolume, currentMethods, website, heardFrom });
       // App sees the new session and opens the dashboard.
     } catch (err) {
       setError(authErrorMessage(err));
@@ -147,10 +147,10 @@ export default function DealerOnboarding({ onBackToHome, onSignIn, onOpenLegal }
               </div>
 
               <div>
-                <span className={labelCls}>Which games do you buy? *</span>
+                <span className={labelCls}>What Pokémon products do you buy? *</span>
                 <div className="flex flex-wrap gap-2">
-                  {GAMES.map((g) => (
-                    <button type="button" key={g} aria-pressed={games.includes(g)} onClick={() => setGames(toggle(games, g))} className={chip(games.includes(g))}>
+                  {PRODUCTS.map((g) => (
+                    <button type="button" key={g} aria-pressed={products.includes(g)} onClick={() => setProducts(toggle(products, g))} className={chip(products.includes(g))}>
                       {g}
                     </button>
                   ))}

@@ -10,8 +10,8 @@ export default function BuylistTicker() {
   const tickerItems = [
     { name: 'Base Set Charizard #4/102', payout: '£205 cash / £239 credit', game: 'Pokémon' },
     { name: 'Umbreon VMAX Alt Art #215/203', payout: '£108 cash / £126 credit', game: 'Pokémon' },
-    { name: 'Mana Crypt, Double Masters', payout: '£130 cash / £151 credit', game: 'MTG' },
-    { name: 'Blue-Eyes White Dragon LOB-001', payout: '£86 cash / £101 credit', game: 'Yu-Gi-Oh!' },
+    { name: 'Mewtwo & Mew GX, Unified Minds', payout: '£118 cash / £138 credit', game: 'Pokémon' },
+    { name: 'Lugia V Alt Art, Silver Tempest', payout: '£86 cash / £101 credit', game: 'Pokémon' },
     { name: 'Bulk holos and reverse holos', payout: '5p per card', game: 'Bulk' },
     { name: 'Bulk commons and uncommons', payout: '1.2p per card', game: 'Bulk' },
     { name: 'Sealed booster packs', payout: '£3.20 per pack', game: 'Sealed' },
