@@ -36,3 +36,10 @@ npm run build            # production bundle in dist/
 ## Notes
 - Card values are estimates from public sources (Pokémon TCG API, Scryfall, YGOPRODeck) converted with a flat factor, not live eBay sold data.
 - `LegalModal.tsx` holds draft Terms and Privacy text. Have it reviewed by a professional and add your company details before launch.
+
+## Photo recognition
+1. **AI (Gemini):** set `GEMINI_API_KEY`. Check it at `/api/ai-status` (returns `ok: true`, or the reason: `quota`, `invalid_key`, `no_key`).
+   Gemini requires a project with available credits or free-tier quota; a project whose prepaid balance is empty is rejected (HTTP 402).
+2. **Backup (no key needed):** if the AI is unavailable, the browser reads the printed card name and number with OCR
+   (tesseract.js, served from `/ocr`, copied at build time by `scripts/copy-ocr-assets.mjs`) and looks the card up in the free catalogues.
+   It is less accurate, so matches from this mode show a lower confidence and the collector is asked to confirm.

@@ -57,7 +57,13 @@ service cloud.firestore {
           (request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly(['status', 'updatedAt', 'offeredAmount', 'dealerOfferNotes']) &&
            request.resource.data.status in ['Accepted', 'Declined', 'Review'] &&
-           resource.data.status in ['Offer Sent', 'Review', 'New']);
+           resource.data.status in ['Offer Sent', 'Review', 'New']) ||
+          // A collector can mark their parcel as posted (carrier / tracking number only).
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['parcel', 'updatedAt']) &&
+           request.resource.data.parcel is map &&
+           request.resource.data.parcel.keys().hasOnly(['postedAt', 'carrier', 'trackingNumber']) &&
+           request.resource.data.parcel.carrier is string && request.resource.data.parcel.carrier.size() <= 60 &&
+           request.resource.data.parcel.trackingNumber is string && request.resource.data.parcel.trackingNumber.size() <= 60);
 
         allow delete: if isOwner(dealerId);
       }

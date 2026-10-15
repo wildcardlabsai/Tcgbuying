@@ -22,8 +22,9 @@ import {
   Sparkles,
   ShieldCheck,
   RotateCcw,
+  Package,
 } from 'lucide-react';
-import { updateSubmissionStatus, getSubmissionByRef, LiveSubmission } from '../services/dealerSubmissionService';
+import { updateSubmissionStatus, getSubmissionByRef, markParcelPosted, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
 import { useMoney } from '../CurrencyContext';
 import CurrencySelect from './CurrencySelect';
@@ -63,6 +64,18 @@ export default function SubmissionTrackerModal({
   const [counterSubmitted, setCounterSubmitted] = useState(false);
 
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [carrier, setCarrier] = useState('');
+  const [trackingNo, setTrackingNo] = useState('');
+  const [parcelBusy, setParcelBusy] = useState(false);
+
+  const handleParcelPosted = async () => {
+    if (!currentSubmission?.id || !dealerId) return;
+    setParcelBusy(true);
+    const ok = await markParcelPosted(dealerId, currentSubmission.id, carrier, trackingNo);
+    setParcelBusy(false);
+    if (ok) lookup(currentSubmission.ref);
+    else alert('Sorry, we could not save that. Please try again.');
+  };
 
   const lookup = async (ref: string) => {
     const wanted = ref.trim();
@@ -287,6 +300,49 @@ export default function SubmissionTrackerModal({
                     </div>
                   </div>
                 </div>
+
+                {/* Posting your cards: instructions + "I've posted it" */}
+                {!['Declined', 'Completed'].includes(currentSubmission.status) && (
+                  <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-600">
+                      <Package className="w-4 h-4 text-slate-500" /> Posting your cards
+                    </div>
+                    {currentSubmission.parcel ? (
+                      <p className="text-sm text-emerald-700 font-semibold flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Marked as posted on {new Date(currentSubmission.parcel.postedAt).toLocaleDateString('en-GB')}
+                        {currentSubmission.parcel.trackingNumber && (
+                          <span className="font-mono text-xs text-slate-600">
+                            ({currentSubmission.parcel.carrier ? `${currentSubmission.parcel.carrier} ` : ''}
+                            {currentSubmission.parcel.trackingNumber})
+                          </span>
+                        )}
+                      </p>
+                    ) : (
+                      <>
+                        <ol className="list-decimal list-inside text-xs text-slate-600 space-y-1 leading-relaxed">
+                          <li>Put each card in a sleeve, then a top loader or semi-rigid holder.</li>
+                          <li>Sandwich them between two pieces of card and tape the edges.</li>
+                          <li>Print your packing slip (button above) and put it inside the parcel.</li>
+                          <li>Send it with a tracked, insured service{storefront?.address ? ' to the address below' : ''}.</li>
+                        </ol>
+                        {storefront?.address && (
+                          <p className="text-xs text-slate-800 whitespace-pre-line bg-white border border-slate-200 rounded-lg p-2.5">
+                            {shopName ? `${shopName}\n` : ''}
+                            {storefront.address}
+                          </p>
+                        )}
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input value={carrier} onChange={(e) => setCarrier(e.target.value)} maxLength={60} placeholder="Carrier (optional)" className="sm:w-40 px-3 py-2 border border-slate-300 rounded-lg text-xs" />
+                          <input value={trackingNo} onChange={(e) => setTrackingNo(e.target.value)} maxLength={60} placeholder="Tracking number (optional)" className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-xs" />
+                          <button type="button" disabled={parcelBusy} onClick={handleParcelPosted} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-60 text-white text-xs font-semibold rounded-lg">
+                            {parcelBusy ? 'Saving…' : "I've posted my parcel"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Offer Decision & Negotiation Box */}
                 {['Offer Sent', 'Accepted', 'Completed'].includes(currentSubmission.status) && (

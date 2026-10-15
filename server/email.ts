@@ -41,6 +41,23 @@ function rateLimited(key: string, max: number, windowMs: number) {
   return recent.length > max;
 }
 
+/** Public base URL for links in emails. Taken from server settings only, never from the request. */
+function appBaseUrl(): string | null {
+  const explicit = process.env.APP_URL;
+  if (explicit && /^https:\/\//.test(explicit)) return explicit.replace(/\/$/, '');
+  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  return vercel ? `https://${vercel}` : null;
+}
+
+function trackLink(slug: string | undefined, ref: string): string | null {
+  const base = appBaseUrl();
+  if (!base || !slug) return null;
+  return `${base}/?shop=${encodeURIComponent(slug)}&track=${encodeURIComponent(ref)}`;
+}
+
+const button = (href: string, label: string) =>
+  `<p><a href="${esc(href)}" style="display:inline-block;padding:12px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600">${esc(label)}</a></p>`;
+
 const notConfigured = (res: Response) => res.status(503).json({ success: false, error: 'not_configured' });
 
 export const emailRouter = Router();
@@ -73,7 +90,7 @@ emailRouter.post('/contact', async (req: Request, res: Response) => {
 });
 
 /**
- * POST /api/notify-offer  { submissionId }
+ * POST /api/notify-offer  { submissionId, kind?: 'offer' | 'paid' }
  * Authorization: Bearer <Firebase ID token of the dealer>
  * Emails the collector about the dealer's offer. The recipient and amounts are read from the
  * dealer's own Firestore submission using the caller's token, so the endpoint cannot be used
@@ -116,7 +133,8 @@ emailRouter.post('/notify-offer', async (req: Request, res: Response) => {
       return;
     }
     const f = (await subRes.json()).fields || {};
-    const shop = (await dealerRes.json()).fields?.name?.stringValue || 'Your card shop';
+    const dealerDoc = await dealerRes.json();
+    const shop = dealerDoc.fields?.name?.stringValue || 'Your card shop';
     const to = f.customerEmail?.stringValue;
     if (!to || !/^\S+@\S+\.\S+$/.test(to)) {
       res.status(422).json({ success: false, error: 'no_customer_email' });
@@ -125,18 +143,84 @@ emailRouter.post('/notify-offer', async (req: Request, res: Response) => {
     const ref = f.reference?.stringValue || `#${submissionId}`;
     const amount = f.offeredAmount?.stringValue;
     const note = f.dealerOfferNotes?.stringValue;
+    const slug = dealerDoc.fields?.slug?.stringValue;
+    const link = trackLink(slug, ref);
+    const name = esc(f.customerName?.stringValue || 'there');
 
-    await sendEmail({
-      to,
-      subject: `${shop} has made an offer on your cards (${ref})`,
-      html: `<p>Hi ${esc(f.customerName?.stringValue || 'there')},</p>
+    if (req.body?.kind === 'paid') {
+      await sendEmail({
+        to,
+        subject: `${shop} has paid for your cards (${ref})`,
+        html: `<p>Hi ${name},</p>
+<p><b>${esc(shop)}</b> has marked your submission <b>${esc(ref)}</b> as paid${amount ? ` (${esc(amount)})` : ''}. Thank you for selling to them!</p>
+${link ? button(link, 'View your submission') : ''}`,
+      });
+    } else {
+      await sendEmail({
+        to,
+        subject: `${shop} has made an offer on your cards (${ref})`,
+        html: `<p>Hi ${name},</p>
 <p><b>${esc(shop)}</b> has reviewed your submission <b>${esc(ref)}</b>${amount ? ` and offered <b>${esc(amount)}</b>` : ''}.</p>
 ${note ? `<p>Note from the shop: ${esc(note)}</p>` : ''}
-<p>Open the shop's buying portal and enter your reference to accept, counter or decline the offer.</p>`,
-    });
+${link ? button(link, 'Accept, counter or decline') : '<p>Open the shop\'s buying page and enter your reference to accept, counter or decline the offer.</p>'}`,
+      });
+    }
     res.json({ success: true });
   } catch (err) {
     console.error('offer email failed', err);
+    res.status(502).json({ success: false, error: 'send_failed' });
+  }
+});
+
+/**
+ * POST /api/notify-received  { dealerId, submissionId }
+ * Confirmation email to the collector right after they submit. Unauthenticated, so it is tightly limited:
+ * the submission must exist, be less than 15 minutes old, and the recipient is read from the submission itself.
+ */
+const notifiedReceived = new Set<string>();
+emailRouter.post('/notify-received', async (req: Request, res: Response) => {
+  if (!RESEND_API_KEY() || !EMAIL_FROM()) return notConfigured(res);
+  const { dealerId, submissionId } = req.body || {};
+  if (
+    typeof dealerId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(dealerId) ||
+    typeof submissionId !== 'string' || !/^TCG-[A-Z0-9]{8}$/.test(submissionId)
+  ) {
+    res.status(400).json({ success: false, error: 'invalid' });
+    return;
+  }
+  if (rateLimited(`received:${req.ip}`, 10, 10 * 60_000) || notifiedReceived.has(submissionId)) {
+    res.status(429).json({ success: false, error: 'rate_limited' });
+    return;
+  }
+  try {
+    const base = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId}/documents/dealers/${dealerId}`;
+    const [subRes, dealerRes] = await Promise.all([fetch(`${base}/submissions/${submissionId}`), fetch(base)]);
+    if (!subRes.ok || !dealerRes.ok) {
+      res.status(404).json({ success: false, error: 'not_found' });
+      return;
+    }
+    const f = (await subRes.json()).fields || {};
+    const dealerFields = (await dealerRes.json()).fields || {};
+    const created = Date.parse(f.createdAt?.timestampValue || '');
+    const to = f.customerEmail?.stringValue;
+    if (!Number.isFinite(created) || Date.now() - created > 15 * 60_000 || !to || !/^\S+@\S+\.\S+$/.test(to)) {
+      res.status(422).json({ success: false, error: 'not_eligible' });
+      return;
+    }
+    notifiedReceived.add(submissionId);
+    const shop = dealerFields.name?.stringValue || 'the shop';
+    const ref = f.reference?.stringValue || `#${submissionId}`;
+    const link = trackLink(dealerFields.slug?.stringValue, ref);
+    await sendEmail({
+      to,
+      subject: `We've received your cards (${ref})`,
+      html: `<p>Hi ${esc(f.customerName?.stringValue || 'there')},</p>
+<p>Thanks for sending your collection to <b>${esc(shop)}</b>. Your reference is <b>${esc(ref)}</b>. They will review it and send you an offer.</p>
+${link ? button(link, 'Track your submission') : ''}`,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('received email failed', err);
     res.status(502).json({ success: false, error: 'send_failed' });
   }
 });

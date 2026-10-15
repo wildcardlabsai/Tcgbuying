@@ -58,9 +58,29 @@ export function sanitizePricing(raw: any): PricingSettings {
   };
 }
 
+/** A card the shop always pays a fixed price for (overrides the percentage). Prices are in the shop currency. */
+export interface BuylistEntry {
+  name: string;
+  setName?: string;
+  cashPrice: number;
+  creditPrice?: number;
+}
+
+export interface OfferTemplate {
+  title: string;
+  body: string;
+}
+
+export const MAX_BUYLIST = 200;
+export const MAX_TEMPLATES = 8;
+
 /** What a dealer customises about the page their customers see. */
 export interface Storefront {
   pricing: PricingSettings;
+  /** Fixed buy prices for specific cards. Shown to collectors, so it is public. */
+  buylist: BuylistEntry[];
+  /** Saved messages the dealer can drop into an offer. */
+  offerTemplates: OfferTemplate[];
   tagline: string;
   welcome: string;
   accent: string;
@@ -77,6 +97,8 @@ export const MAX_INFO_BLOCKS = 6;
 
 export const EMPTY_STOREFRONT: Storefront = {
   pricing: DEFAULT_PRICING,
+  buylist: [],
+  offerTemplates: [],
   tagline: '',
   welcome: '',
   accent: ACCENT_PRESETS[0],
@@ -96,6 +118,20 @@ export function sanitizeStorefront(raw: any): Storefront {
   const logo = clip(raw?.logoUrl, 400_000);
   return {
     pricing: sanitizePricing(raw?.pricing),
+    buylist: (Array.isArray(raw?.buylist) ? raw.buylist : [])
+      .slice(0, MAX_BUYLIST)
+      .map((b: any): BuylistEntry => {
+        const entry: BuylistEntry = { name: clip(b?.name, 80).trim(), cashPrice: num(b?.cashPrice, 0, 1e6, 0) };
+        const set = clip(b?.setName, 80).trim();
+        if (set) entry.setName = set;
+        if (b?.creditPrice !== undefined && b?.creditPrice !== null && b?.creditPrice !== '') entry.creditPrice = num(b.creditPrice, 0, 1e6, 0);
+        return entry;
+      })
+      .filter((b: BuylistEntry) => b.name && b.cashPrice > 0),
+    offerTemplates: (Array.isArray(raw?.offerTemplates) ? raw.offerTemplates : [])
+      .slice(0, MAX_TEMPLATES)
+      .map((t: any): OfferTemplate => ({ title: clip(t?.title, 60).trim(), body: clip(t?.body, 600).trim() }))
+      .filter((t: OfferTemplate) => t.title && t.body),
     tagline: clip(raw?.tagline, LIMITS.tagline),
     welcome: clip(raw?.welcome, LIMITS.welcome),
     accent: /^#[0-9a-fA-F]{6}$/.test(raw?.accent) ? raw.accent : EMPTY_STOREFRONT.accent,

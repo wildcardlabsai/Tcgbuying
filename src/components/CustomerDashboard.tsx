@@ -211,8 +211,25 @@ export default function CustomerDashboard({
   // All amounts below are GBP (base currency); display goes through fmt().
   const pricing = storefront?.pricing ?? DEFAULT_PRICING;
   const { fmt, toGbp, symbol } = useMoney();
-  const cashOf = (price: number) => r2((price * pricing.cashPercent) / 100);
-  const creditOf = (price: number) => r2((price * pricing.creditPercent) / 100);
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  /** The shop's fixed-price entry for this card, if it has one. */
+  const buylistFor = (card: MatchedCard) =>
+    (storefront?.buylist || []).find(
+      (b) => norm(b.name) === norm(card.name) && (!b.setName || norm(card.setName).includes(norm(b.setName)) || norm(b.setName).includes(norm(card.setName)))
+    );
+  const conditionFactor = (condition: string) =>
+    recalculateCardValuation(100, condition, condition.includes('PSA') || condition.includes('BGS')).marketPrice / 100;
+  /** Cash / credit offer for a card: fixed shop price if listed, otherwise the percentage of market value. */
+  const cashFor = (card: MatchedCard, condition = 'Near Mint') => {
+    const entry = buylistFor(card);
+    return entry ? r2(toGbp(entry.cashPrice, pricing.currency) * conditionFactor(condition)) : r2((card.marketPrice * pricing.cashPercent) / 100);
+  };
+  const creditFor = (card: MatchedCard, condition = 'Near Mint') => {
+    const entry = buylistFor(card);
+    if (!entry) return r2((card.marketPrice * pricing.creditPercent) / 100);
+    const credit = entry.creditPrice ?? entry.cashPrice * (pricing.creditPercent / pricing.cashPercent);
+    return r2(toGbp(credit, pricing.currency) * conditionFactor(condition));
+  };
   const bulkRate = (k: keyof typeof pricing.bulk) => toGbp(pricing.bulk[k], pricing.currency);
   const creditRatio = pricing.creditPercent / pricing.cashPercent;
   const bulkLineCash = {
@@ -225,8 +242,8 @@ export default function CustomerDashboard({
   const bulkCreditTotal = r2(bulkCashTotal * creditRatio);
 
   const singlesMarketValue = cardItems.reduce((acc, c) => acc + c.matchedCard.marketPrice, 0);
-  const singlesCashOffer = r2(cardItems.reduce((acc, c) => acc + cashOf(c.matchedCard.marketPrice), 0));
-  const singlesCreditOffer = r2(cardItems.reduce((acc, c) => acc + creditOf(c.matchedCard.marketPrice), 0));
+  const singlesCashOffer = r2(cardItems.reduce((acc, c) => acc + cashFor(c.matchedCard, c.selectedCondition), 0));
+  const singlesCreditOffer = r2(cardItems.reduce((acc, c) => acc + creditFor(c.matchedCard, c.selectedCondition), 0));
 
   const totalMarketValue = r2(singlesMarketValue + bulkCashTotal / (pricing.cashPercent / 100));
   const totalCashOffer = r2(singlesCashOffer + bulkCashTotal);
@@ -516,19 +533,17 @@ export default function CustomerDashboard({
     runAlternativeSearch(card.name, card.game || 'any');
   };
 
-  const handleSelectAlternative = (card: MatchedCard) => {
-    if (searchModalCardIndex === null) return;
+  /** Switch the card at `index` to another catalogue match, keeping the previous match as an option. */
+  const applyMatch = (index: number, card: MatchedCard) => {
     setCardItems((prev) => {
       const updated = [...prev];
-      const target = updated[searchModalCardIndex];
+      const target = updated[index];
+      if (!target) return prev;
       const isGraded = target.selectedCondition.includes('PSA');
-      const newPricing = recalculateCardValuation(
-        card.marketPrice,
-        target.selectedCondition,
-        isGraded
-      );
+      const newPricing = recalculateCardValuation(card.marketPrice, target.selectedCondition, isGraded);
+      const others = (target.alternatives || []).filter((a) => a.id !== card.id);
 
-      updated[searchModalCardIndex] = {
+      updated[index] = {
         ...target,
         detection: {
           ...target.detection,
@@ -544,10 +559,16 @@ export default function CustomerDashboard({
           storeCashOffer: newPricing.storeCashOffer,
           storeCreditOffer: newPricing.storeCreditOffer,
         },
+        alternatives: [target.matchedCard, ...others].slice(0, 4),
         confirmed: true,
       };
       return updated;
     });
+  };
+
+  const handleSelectAlternative = (card: MatchedCard) => {
+    if (searchModalCardIndex === null) return;
+    applyMatch(searchModalCardIndex, card);
     setSearchModalCardIndex(null);
   };
 
@@ -585,8 +606,8 @@ export default function CustomerDashboard({
       tcgplayerUrl: c.matchedCard.tcgplayerUrl,
       condition: c.selectedCondition,
       marketPrice: c.matchedCard.marketPrice,
-      cashOffer: cashOf(c.matchedCard.marketPrice),
-      creditOffer: creditOf(c.matchedCard.marketPrice),
+      cashOffer: cashFor(c.matchedCard, c.selectedCondition),
+      creditOffer: creditFor(c.matchedCard, c.selectedCondition),
       confirmed: c.confirmed,
     }));
 
@@ -879,6 +900,12 @@ export default function CustomerDashboard({
                       <p className="text-xs text-slate-400 mt-1">
                         Select multiple files at once. Supports high-resolution JPG, PNG, WEBP.
                       </p>
+                      <ul className="mt-3 text-[11px] text-slate-400 text-left inline-block space-y-0.5 list-disc list-inside">
+                        <li>Photograph the <strong className="text-slate-300">front</strong> of one card, flat and filling the frame</li>
+                        <li>Use good, even light: no glare on holo or foil</li>
+                        <li>Keep the name at the top and the number at the bottom in view</li>
+                        <li>Blurry? Retake it: clear photos match much more accurately</li>
+                      </ul>
                     </div>
                     <span className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all shadow-md">
                       {isBinderMode ? 'Select Binder Page Photos' : 'Select Card Photos'}
@@ -1368,7 +1395,7 @@ export default function CustomerDashboard({
                         <div className="min-w-0">
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30 mb-1">
                             <Sparkles className="w-3 h-3 text-amber-400" />
-                            {Math.round(item.detection.confidence * 100)}% AI Match
+                            {Math.round(item.detection.confidence * 100)}% match
                           </span>
                           <p className="text-[11px] text-slate-400">{item.matchedCard.game}</p>
                           <p className="text-[11px] text-slate-400">{item.matchedCard.setName}</p>
@@ -1437,6 +1464,35 @@ export default function CustomerDashboard({
                       </div>
 
                     </div>
+
+                    {/* Not the right card? One-tap alternatives */}
+                    {!item.confirmed && (item.alternatives?.length ?? 0) > 0 && (
+                      <div className="mt-4 pt-3 border-t border-slate-700/60">
+                        <p className="text-[11px] font-semibold text-amber-300 mb-2">
+                          {item.detection.confidence < 0.8 ? "We're not certain. " : ''}Is this your card? Tap a different one if not:
+                        </p>
+                        <div className="flex gap-2 overflow-x-auto pb-1">
+                          {item.alternatives!.map((alt) => (
+                            <button
+                              type="button"
+                              key={alt.id}
+                              onClick={() => applyMatch(originalIndex, alt)}
+                              className="shrink-0 w-28 text-left rounded-lg border border-slate-700 hover:border-blue-500 bg-slate-900/70 p-1.5 transition-colors"
+                            >
+                              {alt.imageUrl ? (
+                                <img src={alt.imageUrl} alt={alt.name} className="w-full h-24 object-contain rounded" />
+                              ) : (
+                                <div className="w-full h-24 rounded bg-slate-800" />
+                              )}
+                              <span className="block mt-1 text-[10px] font-semibold text-white truncate">{alt.name}</span>
+                              <span className="block text-[9px] text-slate-400 truncate">
+                                {alt.setName} {alt.cardNumber && `· #${alt.cardNumber}`}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1555,6 +1611,11 @@ export default function CustomerDashboard({
                           <span className="text-xs font-semibold text-blue-300">
                             Est. market value: {fmt(item.matchedCard.marketPrice)}
                           </span>
+                          {buylistFor(item.matchedCard) && (
+                            <span className="text-[10px] font-semibold text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                              Shop price
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1584,10 +1645,10 @@ export default function CustomerDashboard({
                       {/* Cash vs Credit offer breakdown for this card */}
                       <div className="bg-slate-900/90 border border-slate-700/80 rounded-lg px-4 py-2 text-right">
                         <div className="text-xs font-bold text-emerald-400">
-                          Cash: {fmt(cashOf(item.matchedCard.marketPrice))}
+                          Cash: {fmt(cashFor(item.matchedCard, item.selectedCondition))}
                         </div>
                         <div className="text-[11px] text-amber-300">
-                          Credit: {fmt(creditOf(item.matchedCard.marketPrice))}
+                          Credit: {fmt(creditFor(item.matchedCard, item.selectedCondition))}
                         </div>
                       </div>
                     </div>
@@ -2017,7 +2078,7 @@ export default function CustomerDashboard({
                     </p>
                     <CardLinks card={card} />
                     <p className="text-[10px] text-emerald-400 font-semibold">
-                      {card.marketPrice > 0 ? `Est. ${fmt(card.marketPrice)} (Cash ${fmt(cashOf(card.marketPrice))})` : 'No price available'}
+                      {card.marketPrice > 0 ? `Est. ${fmt(card.marketPrice)} (Cash ${fmt(cashFor(card))})` : 'No price available'}
                     </p>
                   </div>
                   <span className="text-xs text-blue-400 font-semibold">Select</span>
@@ -2082,8 +2143,8 @@ export default function CustomerDashboard({
             officialImageUrl: c.matchedCard.imageUrl,
             condition: c.selectedCondition,
             marketPrice: c.matchedCard.marketPrice,
-            cashOffer: cashOf(c.matchedCard.marketPrice),
-            creditOffer: creditOf(c.matchedCard.marketPrice),
+            cashOffer: cashFor(c.matchedCard, c.selectedCondition),
+            creditOffer: creditFor(c.matchedCard, c.selectedCondition),
             confirmed: c.confirmed,
           })),
         }}

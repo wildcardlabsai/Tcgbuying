@@ -7,6 +7,10 @@ import { useEffect, useState } from 'react';
 import {
   Storefront,
   PricingSettings,
+  BuylistEntry,
+  OfferTemplate,
+  MAX_BUYLIST,
+  MAX_TEMPLATES,
   DEFAULT_PRICING,
   getStorefront,
   saveStorefront,
@@ -37,6 +41,11 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
   const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [copied, setCopied] = useState(false);
+  const [buylist, setBuylist] = useState<BuylistEntry[]>([]);
+  const [templates, setTemplates] = useState<OfferTemplate[]>([]);
+  const [newEntry, setNewEntry] = useState({ name: '', setName: '', cashPrice: '', creditPrice: '' });
+  const [importText, setImportText] = useState('');
+  const [importMsg, setImportMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -44,6 +53,8 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
       if (live) {
         setStore(s);
         setPricing(s.pricing);
+        setBuylist(s.buylist);
+        setTemplates(s.offerTemplates);
       }
     });
     return () => {
@@ -62,14 +73,53 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
 
   const handleSave = async () => {
     setStatus('saving');
-    const next = { ...store, pricing: sanitizePricing(pricing) };
+    const next = { ...store, pricing: sanitizePricing(pricing), buylist, offerTemplates: templates };
     const ok = await saveStorefront(dealerId, next);
     setStatus(ok ? 'saved' : 'error');
     if (ok) {
       setStore(next);
       setPricing(next.pricing);
+      setBuylist(next.buylist);
+      setTemplates(next.offerTemplates);
       onSaved(next);
     }
+  };
+
+  const markDirty = () => setStatus('idle');
+
+  const addEntry = () => {
+    const cash = Number(newEntry.cashPrice);
+    if (!newEntry.name.trim() || !(cash > 0) || buylist.length >= MAX_BUYLIST) return;
+    const entry: BuylistEntry = { name: newEntry.name.trim(), cashPrice: cash };
+    if (newEntry.setName.trim()) entry.setName = newEntry.setName.trim();
+    if (newEntry.creditPrice !== '' && Number(newEntry.creditPrice) > 0) entry.creditPrice = Number(newEntry.creditPrice);
+    setBuylist([...buylist, entry]);
+    setNewEntry({ name: '', setName: '', cashPrice: '', creditPrice: '' });
+    markDirty();
+  };
+
+  /** Lines of "Card name, Set (optional), Cash price, Credit price (optional)" */
+  const importLines = () => {
+    const added: BuylistEntry[] = [];
+    let skipped = 0;
+    for (const line of importText.split(/\n+/)) {
+      if (!line.trim()) continue;
+      const cols = line.split(/[,\t|]/).map((c) => c.trim());
+      const nums = cols.filter((c) => /^\d+(\.\d+)?$/.test(c)).map(Number);
+      const texts = cols.filter((c) => c && !/^\d+(\.\d+)?$/.test(c));
+      if (!texts[0] || !(nums[0] > 0)) {
+        skipped++;
+        continue;
+      }
+      const e: BuylistEntry = { name: texts[0], cashPrice: nums[0] };
+      if (texts[1]) e.setName = texts[1];
+      if (nums[1] > 0) e.creditPrice = nums[1];
+      added.push(e);
+    }
+    setBuylist([...buylist, ...added].slice(0, MAX_BUYLIST));
+    setImportMsg(`Added ${added.length} card${added.length === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} line${skipped === 1 ? '' : 's'} it could not read` : ''}.`);
+    setImportText('');
+    markDirty();
   };
 
   const sym = symbolOf(pricing.currency);
@@ -168,6 +218,77 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-white">Fixed prices for specific cards</h3>
+          <p className="text-[11px] text-slate-500 mt-1">
+            Cards you always want at a set price. These override the percentage for a matching card name (and set, if you add one). Amounts are in {pricing.currency}, for Near Mint; the condition the collector picks adjusts them. Collectors can see this list, so only add prices you are happy to publish.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <input className={`${field} col-span-2`} placeholder="Card name" aria-label="Buylist card name" value={newEntry.name} onChange={(e) => setNewEntry({ ...newEntry, name: e.target.value })} />
+          <input className={field} placeholder="Set (optional)" aria-label="Buylist set" value={newEntry.setName} onChange={(e) => setNewEntry({ ...newEntry, setName: e.target.value })} />
+          <input className={field} type="number" min={0} step="0.01" placeholder={`Cash ${sym}`} aria-label="Buylist cash price" value={newEntry.cashPrice} onChange={(e) => setNewEntry({ ...newEntry, cashPrice: e.target.value })} />
+          <input className={field} type="number" min={0} step="0.01" placeholder={`Credit ${sym}`} aria-label="Buylist credit price" value={newEntry.creditPrice} onChange={(e) => setNewEntry({ ...newEntry, creditPrice: e.target.value })} />
+        </div>
+        <button type="button" onClick={addEntry} className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-white">
+          Add card
+        </button>
+
+        {buylist.length > 0 && (
+          <ul className="divide-y divide-slate-800 border border-slate-800 rounded-lg">
+            {buylist.map((b, i) => (
+              <li key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-xs text-slate-200">
+                <span className="min-w-0 truncate">
+                  <strong className="text-white">{b.name}</strong>
+                  {b.setName && <span className="text-slate-400"> · {b.setName}</span>}
+                </span>
+                <span className="shrink-0 flex items-center gap-3">
+                  <span className="text-emerald-400 font-semibold">{sym}{b.cashPrice}{b.creditPrice ? ` / ${sym}${b.creditPrice} credit` : ''}</span>
+                  <button type="button" onClick={() => { setBuylist(buylist.filter((_, idx) => idx !== i)); markDirty(); }} className="text-slate-500 hover:text-red-400" aria-label={`Remove ${b.name}`}>
+                    ✕
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <details className="text-xs text-slate-400">
+          <summary className="cursor-pointer text-slate-300 font-semibold">Paste a list</summary>
+          <p className="mt-2">One card per line: <code className="text-slate-300">Name, Set (optional), Cash price, Credit price (optional)</code></p>
+          <textarea className={`${field} mt-2`} rows={4} value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={'Charizard, Base Set, 220, 250\nBlack Lotus, Alpha, 5000'} aria-label="Paste buylist" />
+          <button type="button" onClick={importLines} className="mt-2 px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-white">Import</button>
+          {importMsg && <p className="mt-2 text-emerald-400">{importMsg}</p>}
+        </details>
+      </section>
+
+      <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white">Offer message templates</h3>
+            <p className="text-[11px] text-slate-500 mt-1">Saved replies you can drop into an offer note in one click.</p>
+          </div>
+          <button
+            type="button"
+            disabled={templates.length >= MAX_TEMPLATES}
+            onClick={() => { setTemplates([...templates, { title: '', body: '' }]); markDirty(); }}
+            className="text-xs font-semibold text-blue-300 hover:text-white disabled:opacity-40"
+          >
+            + Add template
+          </button>
+        </div>
+        {templates.map((t, i) => (
+          <div key={i} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 space-y-2">
+            <div className="flex gap-2">
+              <input className={field} maxLength={60} placeholder="Template name, e.g. Great condition" aria-label={`Template ${i + 1} name`} value={t.title} onChange={(e) => { setTemplates(templates.map((x, idx) => (idx === i ? { ...x, title: e.target.value } : x))); markDirty(); }} />
+              <button type="button" onClick={() => { setTemplates(templates.filter((_, idx) => idx !== i)); markDirty(); }} className="px-2 text-slate-500 hover:text-red-400" aria-label="Remove template">✕</button>
+            </div>
+            <textarea className={field} rows={3} maxLength={600} placeholder="Message to the collector" aria-label={`Template ${i + 1} message`} value={t.body} onChange={(e) => { setTemplates(templates.map((x, idx) => (idx === i ? { ...x, body: e.target.value } : x))); markDirty(); }} />
+          </div>
+        ))}
       </section>
 
       <div className="flex items-center gap-3">

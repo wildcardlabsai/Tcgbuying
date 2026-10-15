@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   Inbox,
@@ -34,6 +34,10 @@ import {
   Check,
   X,
   Printer,
+  BarChart3,
+  Bell,
+  Download,
+  Pencil,
 } from 'lucide-react';
 import Logo from './Logo';
 import {
@@ -50,6 +54,9 @@ import PrintableManifestModal from './PrintableManifestModal';
 import StorefrontEditor from './StorefrontEditor';
 import BuylistSettings from './BuylistSettings';
 import CardLinks from './CardLinks';
+import DealerReports from './DealerReports';
+import { downloadCsv, submissionsToCsv } from '../utils/csv';
+import { r2 } from '../services/currency';
 import CurrencySelect from './CurrencySelect';
 import { useMoney } from '../CurrencyContext';
 import { Storefront } from '../services/storefrontService';
@@ -77,7 +84,7 @@ export default function DealerDashboard({
   storefront,
   onStorefrontSaved,
 }: DealerDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'submissions' | 'card_vault' | 'comps' | 'settings' | 'storefront'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'card_vault' | 'comps' | 'settings' | 'storefront' | 'reports'>('submissions');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'review' | 'sent' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [submissions, setSubmissions] = useState<LiveSubmission[]>([]);
@@ -99,13 +106,39 @@ export default function DealerDashboard({
   const [compGame, setCompGame] = useState('Pokémon');
   const [compResult, setCompResult] = useState(estimateCardPricing('Charizard Base Set', 'Pokémon', 'Raw NM'));
 
-  const { fmt, symbol, offerText } = useMoney();
+  const { fmt, symbol, offerText, currency, toGbp, fromGbp } = useMoney();
+
+  // Quick edit of one card's offer inside a submission
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editCash, setEditCash] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const creditRatio = storefront ? storefront.pricing.creditPercent / storefront.pricing.cashPercent : 84 / 72;
+
+  // New-submission alerts: toast, tab title badge and (if allowed) a browser notification
+  const seenIds = useRef<Set<string> | null>(null);
+  const [unseen, setUnseen] = useState(0);
+  const [alertPerm, setAlertPerm] = useState<NotificationPermission | 'unsupported'>(
+    typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
+  );
   const portalLink = `${window.location.origin}/?shop=${dealerSlug}`;
   const [linkCopied, setLinkCopied] = useState(false);
 
   // Subscribe to real-time Firestore submissions
   useEffect(() => {
+    seenIds.current = null;
     const unsubscribe = subscribeToSubmissions(dealerId, (list) => {
+      const known = seenIds.current;
+      const fresh = known ? list.filter((s) => s.id && !known.has(s.id) && s.status === 'New') : [];
+      seenIds.current = new Set(list.map((s) => s.id!).filter(Boolean));
+      if (fresh.length > 0) {
+        const first = fresh[0];
+        setNotificationMsg(`New submission ${first.ref} from ${first.collector}${fresh.length > 1 ? ` (+${fresh.length - 1} more)` : ''}`);
+        setTimeout(() => setNotificationMsg(null), 6000);
+        if (document.hidden) setUnseen((n) => n + fresh.length);
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+          new Notification('New TCGBuyer submission', { body: `${first.ref} from ${first.collector}` });
+        }
+      }
       setSubmissions(list);
       // If a submission is selected, update it with fresh Firestore state
       setSelectedSubmission((prev) => {
@@ -116,6 +149,15 @@ export default function DealerDashboard({
     });
     return () => unsubscribe();
   }, [dealerId]);
+
+  // Tab title shows how many arrived while you were away
+  useEffect(() => {
+    const base = 'TCGBuyer';
+    document.title = unseen > 0 ? `(${unseen}) New submission${unseen > 1 ? 's' : ''} · ${base}` : document.title.replace(/^\(\d+\) New submissions? · /, '');
+    const clear = () => setUnseen(0);
+    window.addEventListener('focus', clear);
+    return () => window.removeEventListener('focus', clear);
+  }, [unseen]);
 
   // Update offer input whenever selected submission changes
   useEffect(() => {
@@ -139,19 +181,23 @@ export default function DealerDashboard({
     const docId = selectedSubmission.id!;
     const finalOffer = offerVal || customOfferInput;
 
+    const typed = Number(String(finalOffer || '').replace(/[^0-9.]/g, ''));
+    const offerGbp = Number.isFinite(typed) && typed > 0 ? r2(toGbp(typed, currency)) : undefined;
+
     await updateSubmissionStatus(
       docId,
       newStatus,
       finalOffer,
       dealerOfferNoteInput,
-      dealerId
+      dealerId,
+      offerGbp
     );
 
     let msg = `Submission ${selectedSubmission.ref} updated to "${newStatus}"!`;
-    if (newStatus === 'Offer Sent') {
-      const emailResult = await sendOfferEmail(docId);
+    if (newStatus === 'Offer Sent' || newStatus === 'Completed') {
+      const emailResult = await sendOfferEmail(docId, newStatus === 'Completed' ? 'paid' : 'offer');
       if (emailResult === 'sent') msg += ' The collector has been emailed.';
-      else msg += ' (No email sent: share the reference with the collector so they can track the offer.)';
+      else if (newStatus === 'Offer Sent') msg += ' (No email sent: share the reference with the collector so they can track the offer.)';
     }
     setIsUpdatingStatus(false);
     setNotificationMsg(msg);
@@ -170,6 +216,39 @@ export default function DealerDashboard({
 
     const docId = selectedSubmission.id!;
     await updateSubmissionCardItem(docId, updatedItems, dealerId);
+  };
+
+  const startEdit = (idx: number, cashGbp: number, note?: string) => {
+    setEditIdx(idx);
+    setEditCash(String(r2(fromGbp(cashGbp, currency))));
+    setEditNote(note || '');
+  };
+
+  /** Save a per-card price change, recompute the submission's totals and offer, and note it for the collector. */
+  const saveEdit = async () => {
+    if (!selectedSubmission?.items || editIdx === null) return;
+    const entered = Number(editCash);
+    if (!Number.isFinite(entered) || entered < 0) return;
+    const items = [...selectedSubmission.items];
+    const old = items[editIdx];
+    const cash = r2(toGbp(entered, currency));
+    items[editIdx] = { ...old, cashOffer: cash, creditOffer: r2(cash * creditRatio), dealerNote: editNote.trim() || undefined };
+    const totalCashOffer = r2(items.reduce((a, c) => a + (c.cashOffer || 0), 0));
+    const totalCreditOffer = r2(items.reduce((a, c) => a + (c.creditOffer || 0), 0));
+    await updateSubmissionCardItem(selectedSubmission.id!, items, dealerId, { totalCashOffer, totalCreditOffer });
+    setCustomOfferInput(fmt(totalCashOffer));
+    if (editNote.trim()) {
+      const line = `${old.name}: ${editNote.trim()}`;
+      setDealerOfferNoteInput((prev) => (prev ? `${prev}\n${line}` : line));
+    }
+    setEditIdx(null);
+    setNotificationMsg(`Updated ${old.name}. New total ${fmt(totalCashOffer)}.`);
+    setTimeout(() => setNotificationMsg(null), 4000);
+  };
+
+  const enableAlerts = async () => {
+    if (typeof Notification === 'undefined') return;
+    setAlertPerm(await Notification.requestPermission());
   };
 
   // Filtered submissions
@@ -216,6 +295,16 @@ export default function DealerDashboard({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>{IS_LOCAL ? "Local demo data" : "Live sync active"}</span>
           </div>
+
+          {alertPerm === 'default' && (
+            <button
+              onClick={enableAlerts}
+              className="hidden sm:flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700"
+              title="Get a desktop notification when a submission arrives while this tab is in the background"
+            >
+              <Bell className="w-3.5 h-3.5" /> Enable alerts
+            </button>
+          )}
 
           <CurrencySelect />
 
@@ -332,6 +421,18 @@ export default function DealerDashboard({
               </button>
 
               <button
+                onClick={() => setActiveTab('reports')}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                  activeTab === 'reports'
+                    ? 'bg-blue-600 text-white shadow-md'
+                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-white'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>Reports</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('storefront')}
                 className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   activeTab === 'storefront'
@@ -408,7 +509,22 @@ export default function DealerDashboard({
                 <div className="lg:col-span-5 space-y-3">
                   <div className="text-xs font-bold uppercase tracking-wider text-slate-400 flex justify-between items-center">
                     <span>Submissions List ({filteredSubmissions.length})</span>
-                    <span className="text-[10px] text-slate-500">Live updating</span>
+                    <span className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadCsv(
+                            `tcgbuyer-submissions-${new Date().toISOString().slice(0, 10)}.csv`,
+                            submissionsToCsv(filteredSubmissions, { money: fmt })
+                          )
+                        }
+                        className="flex items-center gap-1 text-[10px] font-semibold normal-case tracking-normal text-blue-300 hover:text-white"
+                        title="Download the submissions shown here as a spreadsheet"
+                      >
+                        <Download className="w-3 h-3" /> CSV
+                      </button>
+                      <span className="text-[10px] text-slate-500">Live updating</span>
+                    </span>
                   </div>
 
                   <div className="space-y-2 max-h-[700px] overflow-y-auto pr-1">
@@ -542,6 +658,13 @@ export default function DealerDashboard({
                       {/* Official Offer Action Box */}
                       <div className="bg-gradient-to-r from-blue-950/60 to-purple-950/40 border border-blue-500/40 rounded-xl p-4 space-y-3">
                         <div className="flex items-center justify-between">
+                          {selectedSubmission.parcel && (
+                            <p className="text-[11px] font-semibold text-emerald-300 flex items-center gap-1.5 mb-1">
+                              <Package className="w-3.5 h-3.5" />
+                              Parcel posted {new Date(selectedSubmission.parcel.postedAt).toLocaleDateString('en-GB')}
+                              {selectedSubmission.parcel.trackingNumber && ` · ${selectedSubmission.parcel.carrier} ${selectedSubmission.parcel.trackingNumber}`.trimEnd()}
+                            </p>
+                          )}
                           <span className="text-xs font-bold uppercase tracking-wider text-blue-300 flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                             Dealer Offer to Collector
@@ -565,11 +688,27 @@ export default function DealerDashboard({
                             />
                           </div>
                           <div className="flex-2">
-                            <label className="block text-[11px] text-slate-300 mb-1">
-                              Offer Notes (Sent to Collector):
+                            <label className="block text-[11px] text-slate-300 mb-1 flex items-center justify-between gap-2">
+                              <span>Offer Notes (Sent to Collector):</span>
+                              {(storefront?.offerTemplates.length ?? 0) > 0 && (
+                                <select
+                                  aria-label="Insert a saved message"
+                                  value=""
+                                  onChange={(e) => {
+                                    const t = storefront!.offerTemplates[Number(e.target.value)];
+                                    if (t) setDealerOfferNoteInput((prev) => (prev ? `${prev}\n${t.body}` : t.body));
+                                  }}
+                                  className="bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-[10px] text-slate-200"
+                                >
+                                  <option value="">Insert saved message…</option>
+                                  {storefront!.offerTemplates.map((t, i) => (
+                                    <option key={i} value={i}>{t.title}</option>
+                                  ))}
+                                </select>
+                              )}
                             </label>
-                            <input
-                              type="text"
+                            <textarea
+                              rows={2}
                               value={dealerOfferNoteInput}
                               onChange={(e) => setDealerOfferNoteInput(e.target.value)}
                               placeholder="e.g. Verified NM Base Set Charizard. Immediate bank payout."
@@ -682,7 +821,15 @@ export default function DealerDashboard({
                                 </div>
 
                                 {/* Authenticate Toggle Button */}
-                                <div className="shrink-0">
+                                <div className="shrink-0 flex flex-col gap-1.5 items-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => (editIdx === cIdx ? setEditIdx(null) : startEdit(cIdx, card.cashOffer, card.dealerNote))}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    <span>{editIdx === cIdx ? 'Cancel' : 'Edit offer'}</span>
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => handleToggleCardVerification(cIdx)}
@@ -698,6 +845,41 @@ export default function DealerDashboard({
                                 </div>
 
                               </div>
+
+                              {editIdx === cIdx && (
+                                <div className="mt-2 pt-3 border-t border-slate-800 grid sm:grid-cols-[140px_1fr_auto] gap-2 items-end">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-400 mb-1" htmlFor={`edit-cash-${cIdx}`}>Your cash offer ({symbol})</label>
+                                    <input
+                                      id={`edit-cash-${cIdx}`}
+                                      type="number"
+                                      min={0}
+                                      step="0.01"
+                                      value={editCash}
+                                      onChange={(e) => setEditCash(e.target.value)}
+                                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm font-bold text-emerald-400"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-400 mb-1" htmlFor={`edit-note-${cIdx}`}>Reason, shown to the collector (optional)</label>
+                                    <input
+                                      id={`edit-note-${cIdx}`}
+                                      value={editNote}
+                                      maxLength={140}
+                                      onChange={(e) => setEditNote(e.target.value)}
+                                      placeholder="e.g. Edge wear, so I can offer a little less"
+                                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={saveEdit}
+                                    className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white"
+                                  >
+                                    Save
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -902,6 +1084,8 @@ export default function DealerDashboard({
           )}
 
           {/* TAB 4: STORE SETTINGS & BUYLIST MARGINS */}
+          {activeTab === 'reports' && <DealerReports submissions={submissions} />}
+
           {activeTab === 'storefront' && (
             <StorefrontEditor
               dealerId={dealerId}

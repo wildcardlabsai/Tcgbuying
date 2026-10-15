@@ -256,3 +256,15 @@ export async function findBestMatch(
   const hits = await searchCards({ q: clean, game, set, number: number || inlineNumber, limit: 6 }, true);
   return hits[0] ?? null;
 }
+
+/** Ranked catalogue matches for a detected card (best first). */
+export async function findMatches(
+  name: string,
+  game: string,
+  set?: string,
+  number?: string,
+  limit = 6
+): Promise<CatalogCard[]> {
+  const { name: clean, number: inlineNumber } = splitQuery(name);
+  return searchCards({ q: clean, game, set, number: number || inlineNumber, limit }, true);
+}

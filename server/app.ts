@@ -7,7 +7,8 @@ import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { emailRouter } from './email';
-import { findBestMatch, searchCards, splitQuery } from './cardLookup';
+import { findMatches, searchCards, splitQuery, CatalogCard } from './cardLookup';
+import { parseOcr } from './ocrIdentify';
 
 dotenv.config();
 
@@ -169,12 +170,12 @@ const BENCHMARK_CARDS = [
  * Never invents a card: if nothing matches, returns the detected name with no price (rawMarketPrice 0).
  */
 async function fetchCardFromFreeApis(cardName: string, game: string, setName?: string, cardNumber?: string) {
-  const hit = await findBestMatch(cardName, game, setName, cardNumber);
-  if (hit) return hit;
+  const hits = await findMatches(cardName, game, setName, cardNumber);
+  if (hits[0]) return { ...hits[0], alternatives: hits.slice(1, 4) };
 
   const wanted = cardName.toLowerCase();
   const found = BENCHMARK_CARDS.find((c) => c.name.toLowerCase() === wanted);
-  if (found) return found;
+  if (found) return { ...found, alternatives: [] as CatalogCard[] };
 
   return {
     id: `card-${wanted.replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
@@ -187,6 +188,29 @@ async function fetchCardFromFreeApis(cardName: string, game: string, setName?: s
     rawMarketPrice: 0,
     priceKnown: false,
     tcgplayerUrl: `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(cardName)}`,
+    alternatives: [] as CatalogCard[],
+  };
+}
+
+/** Shape a catalogue card the way the client expects (offers use the default rates; the client re-prices). */
+function toMatchedPayload(c: CatalogCard) {
+  const price = c.rawMarketPrice ?? 0;
+  return {
+    id: c.id,
+    name: c.name,
+    game: c.game,
+    setName: c.setName,
+    cardNumber: c.cardNumber,
+    rarity: c.rarity,
+    imageUrl: c.imageUrl,
+    tcgplayerUrl: c.tcgplayerUrl,
+    cardmarketUrl: c.cardmarketUrl,
+    sourceUrl: c.sourceUrl,
+    marketPrice: price,
+    storeCashOffer: Math.round(price * 0.72 * 100) / 100,
+    storeCreditOffer: Math.round(price * 0.84 * 100) / 100,
+    ebayLastSoldAvg: price,
+    ebayRecentComps: [],
   };
 }
 
@@ -460,6 +484,7 @@ Format your response as valid JSON ONLY without markdown backticks:
         ebayLastSoldAvg: finalMarketPrice,
         ebayRecentComps,
       },
+      alternatives: ((matchedData as any).alternatives as CatalogCard[]).map(toMatchedPayload),
     });
   } catch (error: any) {
     console.error('Card recognition error:', error);
@@ -762,6 +787,52 @@ app.get('/api/search-cards', async (req: Request, res: Response) => {
   const results = await searchCards({ q: name, game, number, limit: 10 });
   res.json({
     results: results.map((c) => ({ ...c, marketPrice: c.rawMarketPrice })),
+  });
+});
+
+/**
+ * POST /api/identify-from-text  { top, bottom }
+ * Backup identification from OCR text read in the browser, used when AI vision is unavailable.
+ */
+app.post('/api/identify-from-text', async (req: Request, res: Response) => {
+  const top = String(req.body?.top ?? '').slice(0, 2000);
+  const bottom = String(req.body?.bottom ?? '').slice(0, 2000);
+  const parsed = parseOcr(top, bottom);
+  if (parsed.names.length === 0) {
+    res.status(422).json({ success: false, error: 'card_not_identified' });
+    return;
+  }
+
+  const game = parsed.gameHint === 'pokemon' ? 'Pokémon' : parsed.gameHint === 'ygo' ? 'Yu-Gi-Oh!' : 'any';
+  let best: { cards: CatalogCard[]; name: string } | null = null;
+  for (const name of parsed.names) {
+    const cards = await findMatches(name, game, undefined, parsed.number || parsed.setCode, 6);
+    const exact = cards[0] && cards[0].name.toLowerCase().replace(/[^a-z0-9]/g, '').startsWith(name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5));
+    if (cards.length && (!best || exact)) best = { cards, name };
+    if (exact) break;
+  }
+  if (!best) {
+    res.status(422).json({ success: false, error: 'card_not_identified' });
+    return;
+  }
+
+  const [top1, ...rest] = best.cards;
+  const numberMatched = Boolean(parsed.number) && top1.cardNumber.split('/')[0] === parsed.number!.split('/')[0];
+  res.json({
+    success: true,
+    detection: {
+      name: top1.name,
+      game: top1.game,
+      setName: top1.setName,
+      cardNumber: top1.cardNumber,
+      rarity: top1.rarity,
+      condition: 'Near Mint',
+      isGraded: false,
+      confidence: numberMatched ? 0.7 : 0.5,
+      notes: 'Read from the printed text on your photo (backup mode). Please check it matches your card.',
+    },
+    matchedCard: toMatchedPayload(top1),
+    alternatives: rest.slice(0, 3).map(toMatchedPayload),
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { IS_LOCAL } from '../config';
 import { readJson, writeJson } from './localStore';
+import { sendReceivedEmail } from './notifyService';
 
 // ---------- Local mode (browser localStorage) ----------
 type RawDoc = Record<string, any> & { id: string; dealerId: string };
@@ -82,6 +83,11 @@ export interface LiveSubmission {
   updatedAt?: any;
   dealerOfferNotes?: string;
   offeredAmount?: string;
+  /** Set by the collector once they have posted the cards. */
+  parcel?: { postedAt: string; carrier: string; trackingNumber: string };
+  /** When the dealer sent their offer, and its value in GBP (for reports). */
+  offeredAt?: any;
+  offerGbp?: number;
 }
 
 function toMillis(t: any): number {
@@ -110,6 +116,9 @@ function mapSubmission(id: string, data: Record<string, any>): LiveSubmission {
     items: data.items || data.cardItems || [],
     offeredAmount: data.offeredAmount || data.offerValue || '',
     dealerOfferNotes: data.dealerOfferNotes || '',
+    parcel: data.parcel || undefined,
+    offeredAt: data.offeredAt,
+    offerGbp: typeof data.offerGbp === 'number' ? data.offerGbp : undefined,
     createdAt: data.createdAt,
   };
 }
@@ -265,6 +274,7 @@ export async function createCustomerSubmission(
         createdAt: serverTimestamp(),
       }).catch((e) => handleFirestoreError(e, OperationType.CREATE, `users/${owner.uid}/submissionRefs/${id}`));
     }
+    sendReceivedEmail(dealerId, id);
     return { success: true, ref, id };
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `dealers/${dealerId}/submissions/${id}`);
@@ -280,12 +290,17 @@ export async function updateSubmissionStatus(
   newStatus: 'Review' | 'Offer Sent' | 'Accepted' | 'Completed' | 'Declined',
   offerValue: string | undefined,
   dealerOfferNotes: string | undefined,
-  dealerId: string
+  dealerId: string,
+  offerGbp?: number
 ) {
   if (IS_LOCAL) {
     const patch: Record<string, any> = { status: newStatus };
     if (offerValue) patch.offeredAmount = offerValue;
     if (dealerOfferNotes) patch.dealerOfferNotes = dealerOfferNotes;
+    if (newStatus === 'Offer Sent') {
+      patch.offeredAt = Date.now();
+      if (offerGbp !== undefined) patch.offerGbp = offerGbp;
+    }
     return patchLocalDoc(dealerId, submissionId, patch);
   }
   try {
@@ -296,6 +311,10 @@ export async function updateSubmissionStatus(
     };
     if (offerValue) updates.offeredAmount = offerValue;
     if (dealerOfferNotes) updates.dealerOfferNotes = dealerOfferNotes;
+    if (newStatus === 'Offer Sent') {
+      updates.offeredAt = serverTimestamp();
+      if (offerGbp !== undefined) updates.offerGbp = offerGbp;
+    }
     await updateDoc(docRef, updates);
     return true;
   } catch (error) {
@@ -310,13 +329,15 @@ export async function updateSubmissionStatus(
 export async function updateSubmissionCardItem(
   submissionId: string,
   updatedItems: SubmittedCardItem[],
-  dealerId: string
+  dealerId: string,
+  totals?: { totalCashOffer: number; totalCreditOffer: number }
 ) {
-  if (IS_LOCAL) return patchLocalDoc(dealerId, submissionId, { items: updatedItems });
+  if (IS_LOCAL) return patchLocalDoc(dealerId, submissionId, { items: updatedItems, ...(totals || {}) });
   try {
     const docRef = doc(db, 'dealers', dealerId, 'submissions', submissionId);
     await updateDoc(docRef, {
       items: updatedItems,
+      ...(totals || {}),
       updatedAt: serverTimestamp(),
     });
     return true;
@@ -358,4 +379,26 @@ export async function listMySubmissions(uid: string): Promise<MySubmission[]> {
     }
   }
   return out.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+}
+
+/** Collector marks their parcel as posted, optionally with a carrier and tracking number. */
+export async function markParcelPosted(
+  dealerId: string,
+  submissionId: string,
+  carrier: string,
+  trackingNumber: string
+): Promise<boolean> {
+  const parcel = {
+    postedAt: new Date().toISOString(),
+    carrier: carrier.trim().slice(0, 60),
+    trackingNumber: trackingNumber.trim().slice(0, 60),
+  };
+  if (IS_LOCAL) return patchLocalDoc(dealerId, submissionId, { parcel });
+  try {
+    await updateDoc(doc(db, 'dealers', dealerId, 'submissions', submissionId), { parcel, updatedAt: serverTimestamp() });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `dealers/${dealerId}/submissions/${submissionId}`);
+    return false;
+  }
 }

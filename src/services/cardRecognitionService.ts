@@ -42,6 +42,8 @@ export interface CardDetectionResult {
 }
 
 export interface RecognizedCardItem {
+  /** Other likely matches the collector can switch to with one tap. */
+  alternatives?: MatchedCard[];
   tempId: string;
   userPhoto: string;
   fileName: string;
@@ -243,11 +245,27 @@ function recognitionErrorMessage(code?: string): string {
     case 'recognition_invalid_key':
     case 'recognition_unavailable':
       return 'Photo recognition is not available right now. You can still add your cards by typing a list or searching by name.';
+    case 'ocr_failed':
+      return 'We could not read the card name from that photo. Try a clearer photo of the front of the card, or add it by name.';
     case 'card_not_identified':
       return 'We could not read a card in that photo. Try a clearer, well-lit photo of the front, or add the card by name.';
     default:
       return 'We could not identify that card right now. Please try again, or add the card by name.';
   }
+}
+
+/** Backup: read the printed name/number in the browser and look the card up in the catalogues. */
+async function recognizeByOcr(base64Data: string): Promise<{ detection: CardDetectionResult; matchedCard: MatchedCard; alternatives: MatchedCard[] }> {
+  const { readCardText } = await import('./ocrService');
+  const { top, bottom } = await readCardText(base64Data);
+  const res = await fetch('/api/identify-from-text', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ top, bottom }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) throw new Error(recognitionErrorMessage('card_not_identified'));
+  return data;
 }
 
 export async function recognizeCardPhoto(
@@ -279,6 +297,7 @@ export async function recognizeCardPhoto(
           fileName,
           detection: data.detection,
           matchedCard: data.matchedCard,
+          alternatives: data.alternatives || [],
           selectedCondition: data.detection.condition || 'Near Mint',
           selectedPayoutType: 'cash',
           confirmed: false,
@@ -292,7 +311,29 @@ export async function recognizeCardPhoto(
     console.warn('API card recognition fallback:', err);
   }
 
-  // Only the built-in sample cards (identified by hint) may be matched offline.
+  // AI unavailable (or could not read it): try the in-browser OCR backup, but not for the built-in samples.
+  if (!userHint) {
+    try {
+      const ocr = await recognizeByOcr(base64Data);
+      return {
+        tempId,
+        userPhoto: base64Data,
+        fileName,
+        detection: ocr.detection,
+        matchedCard: ocr.matchedCard,
+        alternatives: ocr.alternatives,
+        selectedCondition: ocr.detection.condition || 'Near Mint',
+        selectedPayoutType: 'cash',
+        confirmed: false,
+        status: 'ready',
+      };
+    } catch (err) {
+      console.warn('OCR backup failed:', err);
+      throw new Error(recognitionErrorMessage('ocr_failed'));
+    }
+  }
+
+  // Only the built-in sample
   const fallback = userHint
     ? FALLBACK_CARDS.find((c) =>
         c.name.toLowerCase().includes(userHint.toLowerCase()) ||

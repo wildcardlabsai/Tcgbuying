@@ -33,6 +33,7 @@ import { Storefront, getStorefront } from './services/storefrontService';
 import { signOutUser, subscribeToAuth, getDealerBySlug, DealerProfile, DEMO_DEALER } from './services/authService';
 
 const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
+const trackParam = new URLSearchParams(window.location.search).get('track');
 
 export default function App() {
   return (
@@ -52,9 +53,9 @@ function AppInner() {
   const [authReturnView, setAuthReturnView] = useState<View>('customer_account');
   const [accountTrack, setAccountTrack] = useState<{ dealerId: string; shopName: string } | null>(null);
   const [isContactOpen, setIsContactOpen] = useState(false);
-  const [isTrackerOpen, setIsTrackerOpen] = useState(false);
+  const [isTrackerOpen, setIsTrackerOpen] = useState(Boolean(shopSlugParam && trackParam));
   const openLegal = useLegal();
-  const [trackerRef, setTrackerRef] = useState('');
+  const [trackerRef, setTrackerRef] = useState(shopSlugParam && trackParam ? trackParam : '');
   const [submissionsList, setSubmissionsList] = useState<LiveSubmission[]>([]);
 
   // Dealer auth state
