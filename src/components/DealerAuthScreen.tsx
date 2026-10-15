@@ -17,12 +17,13 @@ import {
 
 interface DealerAuthScreenProps {
   onBackToHome: () => void;
+  initialMode?: 'signin' | 'signup';
 }
 
 type Mode = 'signin' | 'signup' | 'reset';
 
-export default function DealerAuthScreen({ onBackToHome }: DealerAuthScreenProps) {
-  const [mode, setMode] = useState<Mode>('signin');
+export default function DealerAuthScreen({ onBackToHome, initialMode = 'signin' }: DealerAuthScreenProps) {
+  const [mode, setMode] = useState<Mode>(initialMode);
   const [shopName, setShopName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

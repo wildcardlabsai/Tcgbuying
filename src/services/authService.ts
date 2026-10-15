@@ -15,7 +15,7 @@ import {
 } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
-import { IS_LOCAL } from '../config';
+import { IS_LOCAL, LOGIN_BYPASS } from '../config';
 import { randomId, readJson, sha256, writeJson } from './localStore';
 
 export interface DealerProfile {
@@ -23,6 +23,9 @@ export interface DealerProfile {
   name: string;
   slug: string;
 }
+
+/** Shop used by the dashboard while login is bypassed. */
+export const DEMO_DEALER: DealerProfile = { id: 'demo-dealer', name: 'Demo Card Shop', slug: 'demo-shop' };
 
 export interface AuthState {
   dealer: DealerProfile;
@@ -146,6 +149,7 @@ export async function ensureDealerProfile(user: User, shopName?: string): Promis
 }
 
 export async function getDealerBySlug(slug: string): Promise<DealerProfile | null> {
+  if (LOGIN_BYPASS && slug === DEMO_DEALER.slug) return DEMO_DEALER;
   if (IS_LOCAL) return readJson<DealerProfile[]>(DEALERS_KEY, []).find((d) => d.slug === slug) ?? null;
   try {
     const snap = await getDocs(query(collection(db, 'dealers'), where('slug', '==', slug), limit(1)));

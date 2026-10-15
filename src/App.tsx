@@ -27,7 +27,8 @@ import {
 import LegalModal, { LegalDoc } from './components/LegalModal';
 import DealerAuthScreen from './components/DealerAuthScreen';
 import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
-import { subscribeToAuth, getDealerBySlug, DealerProfile } from './services/authService';
+import { LOGIN_BYPASS } from './config';
+import { subscribeToAuth, getDealerBySlug, DealerProfile, DEMO_DEALER } from './services/authService';
 
 const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 
@@ -40,7 +41,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard'>(
+  const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard' | 'dealer_signup'>(
     shopSlugParam ? 'customer_portal' : 'landing'
   );
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
@@ -76,14 +77,22 @@ function AppInner() {
     });
   }, []);
 
+  // While login is bypassed, the dashboard falls back to a demo shop
+  const activeDealer = dealer ?? (LOGIN_BYPASS ? DEMO_DEALER : null);
+
+  // After onboarding (sign-up), go straight to the dashboard
+  useEffect(() => {
+    if (currentView === 'dealer_signup' && dealer) setCurrentView('dealer_dashboard');
+  }, [currentView, dealer]);
+
   // Live submissions for the signed-in dealer (also feeds the tracker for their own view)
   useEffect(() => {
-    if (!dealer) return;
-    return subscribeToSubmissions(dealer.id, setSubmissionsList);
-  }, [dealer?.id]);
+    if (!activeDealer) return;
+    return subscribeToSubmissions(activeDealer.id, setSubmissionsList);
+  }, [activeDealer?.id]);
 
   // Portal/tracker target: the linked shop, otherwise the signed-in dealer previewing their own portal
-  const portalDealer = linkedShop || dealer;
+  const portalDealer = linkedShop || activeDealer;
 
   const scrollToFeatures = () => {
     const el = document.getElementById('features');
@@ -125,7 +134,7 @@ function AppInner() {
     if (!authReady) {
       return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>;
     }
-    if (!dealer) {
+    if (!activeDealer) {
       return <DealerAuthScreen onBackToHome={() => setCurrentView('landing')} />;
     }
     return (
@@ -133,20 +142,28 @@ function AppInner() {
         <DealerDashboard
           onBackToHome={() => setCurrentView('landing')}
           onOpenCustomerPortal={() => setCurrentView('customer_portal')}
-          shopName={dealer.name}
-          dealerId={dealer.id}
-          dealerSlug={dealer.slug}
-          userEmail={userEmail}
+          shopName={activeDealer.name}
+          dealerId={activeDealer.id}
+          dealerSlug={activeDealer.slug}
+          userEmail={dealer ? userEmail : 'Demo mode (login off)'}
         />
         <SubmissionTrackerModal
           isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}
           initialRef={trackerRef}
           submissions={submissionsList}
-          dealerId={dealer.id}
+          dealerId={activeDealer.id}
         />
       </>
     );
+  }
+
+  // Dealer onboarding / account creation
+  if (currentView === 'dealer_signup') {
+    if (!authReady) {
+      return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>;
+    }
+    return <DealerAuthScreen initialMode="signup" onBackToHome={() => setCurrentView('landing')} />;
   }
 
   // 3. MAIN LANDING PAGE (Exact Mockup Design)
@@ -154,7 +171,7 @@ function AppInner() {
     <div className="min-h-screen bg-white text-slate-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif] overflow-x-hidden">
       {/* Top Navbar */}
       <Navbar
-        onGetStarted={() => setCurrentView('customer_portal')}
+        onGetStarted={() => setCurrentView('dealer_signup')}
         onExploreFeatures={scrollToFeatures}
         onOpenDealerPortal={() => setCurrentView('dealer_dashboard')}
         onOpenCustomerPortal={() => setCurrentView('customer_portal')}
@@ -164,7 +181,7 @@ function AppInner() {
       <main className="flex-1">
         {/* Hero Section */}
         <HeroSection
-          onGetStarted={() => setCurrentView('customer_portal')}
+          onGetStarted={() => setCurrentView('dealer_signup')}
           onSeeHowItWorks={() => setIsHowItWorksOpen(true)}
           onOpenSubmissionDemo={() => setCurrentView('dealer_dashboard')}
         />
@@ -184,17 +201,17 @@ function AppInner() {
         />
 
         {/* Made for your shop: Your buying process. Your brand. Your customers. */}
-        <BrandedPortalSection onGetStarted={() => setCurrentView('customer_portal')} />
+        <BrandedPortalSection onGetStarted={() => setCurrentView('dealer_signup')} />
 
         {/* A clearer way to buy cards: 3 Step Cards */}
         <StepsWorkflowSection />
 
         {/* Store ROI & Staff Time Saved Calculator */}
-        <RoiCalculatorSection onGetStarted={() => setCurrentView('dealer_dashboard')} />
+        <RoiCalculatorSection onGetStarted={() => setCurrentView('dealer_signup')} />
 
         {/* Dark Navy CTA Banner */}
         <CtaBanner
-          onGetStarted={() => setCurrentView('customer_portal')}
+          onGetStarted={() => setCurrentView('dealer_signup')}
           onExploreFeatures={scrollToFeatures}
         />
 
@@ -209,20 +226,36 @@ function AppInner() {
         onOpenPrivacy={() => setLegalDoc('privacy')}
       />
 
+      {/* Spacer so the sticky bar never covers the footer */}
+      <div className="h-16" aria-hidden="true" />
+
+      {/* Sticky Get Started bar */}
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-[#0b1329]/95 backdrop-blur border-t border-slate-800 px-4 py-3 flex items-center justify-center gap-3 sm:gap-6">
+        <p className="hidden sm:block text-sm text-slate-200 font-medium">
+          Ready to run your own online card-buying portal?
+        </p>
+        <button
+          onClick={() => setCurrentView('dealer_signup')}
+          className="px-6 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold shadow-lg shadow-blue-900/40 transition-colors cursor-pointer"
+        >
+          Get Started
+        </button>
+      </div>
+
       {/* Collector Live Submission Tracker & Offer Acceptance */}
       <SubmissionTrackerModal
         isOpen={isTrackerOpen}
         onClose={() => setIsTrackerOpen(false)}
         initialRef={trackerRef}
         submissions={submissionsList}
-        dealerId={dealer?.id ?? null}
+        dealerId={activeDealer?.id ?? null}
       />
 
       {/* Product Walkthrough */}
       <HowItWorksModal
         isOpen={isHowItWorksOpen}
         onClose={() => setIsHowItWorksOpen(false)}
-        onGetStarted={() => setCurrentView('customer_portal')}
+        onGetStarted={() => setCurrentView('dealer_signup')}
       />
 
       <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
