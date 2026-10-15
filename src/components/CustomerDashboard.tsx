@@ -272,14 +272,17 @@ export default function CustomerDashboard({
         text: `Recognizing rapid card ${i + 1} of ${rapidFireCaptured.length}...`,
       });
 
-      const recognized = await recognizeCardPhoto(photo, `Rapid Card #${i + 1}.jpg`);
-      newItems.push(recognized);
+      try {
+        newItems.push(await recognizeCardPhoto(photo, `Rapid Card #${i + 1}.jpg`));
+      } catch (err) {
+        alert(`Card ${i + 1}: ${(err as Error).message}`);
+      }
     }
 
     setCardItems((prev) => [...prev, ...newItems]);
     setIsScanning(false);
     setRapidFireCaptured([]);
-    setCurrentStep(2);
+    if (newItems.length > 0) setCurrentStep(2);
   };
 
   // Process File Uploads (Supports single cards and 9-pocket binder pages)
@@ -302,28 +305,30 @@ export default function CustomerDashboard({
       const file = fileArray[i];
       const base64 = await readFileAsBase64(file);
 
-      if (isBinderMode) {
-        setScanProgress({
-          current: i + 1,
-          total: fileArray.length,
-          text: `Analyzing binder page ${i + 1} with AI vision: detecting all cards...`,
-        });
-        const binderCards = await scanMultiCardBinderPhoto(base64, file.name);
-        newItems.push(...binderCards);
-      } else {
-        setScanProgress({
-          current: i + 1,
-          total: fileArray.length,
-          text: `Recognizing card ${i + 1} of ${fileArray.length}: ${file.name}...`,
-        });
-        const recognized = await recognizeCardPhoto(base64, file.name);
-        newItems.push(recognized);
+      try {
+        if (isBinderMode) {
+          setScanProgress({
+            current: i + 1,
+            total: fileArray.length,
+            text: `Analyzing binder page ${i + 1} with AI vision: detecting all cards...`,
+          });
+          newItems.push(...(await scanMultiCardBinderPhoto(base64, file.name)));
+        } else {
+          setScanProgress({
+            current: i + 1,
+            total: fileArray.length,
+            text: `Recognizing card ${i + 1} of ${fileArray.length}: ${file.name}...`,
+          });
+          newItems.push(await recognizeCardPhoto(base64, file.name));
+        }
+      } catch (err) {
+        alert(`${file.name}: ${(err as Error).message}`);
       }
     }
 
     setCardItems((prev) => [...prev, ...newItems]);
     setIsScanning(false);
-    setCurrentStep(2);
+    if (newItems.length > 0) setCurrentStep(2);
   };
 
   // Convert file to base64
@@ -342,10 +347,14 @@ export default function CustomerDashboard({
     setIsScanning(true);
     setScanProgress({ current: 1, total: 1, text: `Scanning sample ${preset.name}...` });
 
-    const recognized = await recognizeCardPhoto(preset.url, `${preset.name}.jpg`, preset.name);
-    setCardItems((prev) => [...prev, recognized]);
+    try {
+      const recognized = await recognizeCardPhoto(preset.url, `${preset.name}.jpg`, preset.name);
+      setCardItems((prev) => [...prev, recognized]);
+      setCurrentStep(2);
+    } catch (err) {
+      alert((err as Error).message);
+    }
     setIsScanning(false);
-    setCurrentStep(2);
   };
 
   // Preset 9-Pocket Binder Page Loader
@@ -353,7 +362,7 @@ export default function CustomerDashboard({
     setIsScanning(true);
     setScanProgress({ current: 1, total: 1, text: 'Scanning 9-pocket binder page for multiple cards...' });
 
-    const multiCards = await scanMultiCardBinderPhoto(SAMPLE_BINDER_PAGE.url, 'Binder Page 1.jpg');
+    const multiCards = await scanMultiCardBinderPhoto(SAMPLE_BINDER_PAGE.url, 'Binder Page 1.jpg', true);
     setCardItems((prev) => [...prev, ...multiCards]);
     setIsScanning(false);
     setCurrentStep(2);
@@ -363,7 +372,7 @@ export default function CustomerDashboard({
   const handleImportBuylist = async () => {
     if (!buylistText.trim()) return;
     setIsScanning(true);
-    setScanProgress({ current: 1, total: 1, text: 'Parsing buylist & looking up eBay comps across TCG database...' });
+    setScanProgress({ current: 1, total: 1, text: 'Parsing buylist & looking up market values...' });
 
     const items = await parseBuylistTextOrCsv(buylistText, buylistGame);
     setCardItems((prev) => [...prev, ...items]);
@@ -1393,10 +1402,10 @@ export default function CustomerDashboard({
                   Step 3 of 4 • Valuation & Comps
                 </span>
                 <h2 className="text-2xl font-black text-white mt-1">
-                  Card Condition & eBay Sold Comps
+                  Card Condition & Value Estimate
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Adjust each card's condition to calculate accurate payouts based on eBay average sold listings and store buy percentages.
+                  Adjust each card's condition to calculate accurate payouts based on estimated market values and the shop's buy percentages. Estimates only: the shop confirms the final offer after inspecting your cards.
                 </p>
               </div>
 
@@ -1472,7 +1481,7 @@ export default function CustomerDashboard({
                         </p>
                         <div className="mt-1 flex items-center gap-2">
                           <span className="text-xs font-semibold text-blue-300">
-                            eBay Last Sold Avg: £{item.matchedCard.marketPrice}
+                            Est. market value: £{item.matchedCard.marketPrice}
                           </span>
                         </div>
                       </div>
@@ -1513,26 +1522,6 @@ export default function CustomerDashboard({
 
                   </div>
 
-                  {/* Recent eBay comps list expandable */}
-                  {item.matchedCard.ebayRecentComps && item.matchedCard.ebayRecentComps.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-700/60 text-xs">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                        Recent eBay Completed Sales:
-                      </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
-                        {item.matchedCard.ebayRecentComps.slice(0, 3).map((comp, cIdx) => (
-                          <div
-                            key={cIdx}
-                            className="bg-slate-900/60 rounded p-2 text-[11px] border border-slate-800 text-slate-300"
-                          >
-                            <div className="font-semibold text-white">£{comp.price}</div>
-                            <div className="truncate text-slate-400 text-[10px]">{comp.title}</div>
-                            <div className="text-[9px] text-slate-500 mt-0.5">Sold {comp.date}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

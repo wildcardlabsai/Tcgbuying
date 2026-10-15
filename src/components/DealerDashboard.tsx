@@ -44,6 +44,7 @@ import {
 } from '../services/dealerSubmissionService';
 import { estimateCardPricing } from '../services/marketPricingService';
 import { signOutDealer } from '../services/authService';
+import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
 import ConditionGuideModal from './ConditionGuideModal';
 
@@ -137,9 +138,15 @@ export default function DealerDashboard({
       dealerId
     );
 
+    let msg = `Submission ${selectedSubmission.ref} updated to "${newStatus}"!`;
+    if (newStatus === 'Offer Sent') {
+      const emailResult = await sendOfferEmail(docId);
+      if (emailResult === 'sent') msg += ' The collector has been emailed.';
+      else msg += ' (No email sent: share the reference with the collector so they can track the offer.)';
+    }
     setIsUpdatingStatus(false);
-    setNotificationMsg(`Submission ${selectedSubmission.ref} updated to "${newStatus}"!`);
-    setTimeout(() => setNotificationMsg(null), 3000);
+    setNotificationMsg(msg);
+    setTimeout(() => setNotificationMsg(null), 5000);
   };
 
   // Toggle card verification
@@ -310,7 +317,7 @@ export default function DealerDashboard({
                 }`}
               >
                 <TrendingUp className="w-4 h-4" />
-                <span>eBay Comps Search</span>
+                <span>Price Guide</span>
               </button>
 
               <button
@@ -753,13 +760,13 @@ export default function DealerDashboard({
             </div>
           )}
 
-          {/* TAB 3: LIVE EBAY COMPS SEARCH */}
+          {/* TAB 3: PRICE GUIDE */}
           {activeTab === 'comps' && (
             <div className="space-y-6 max-w-4xl">
               <div className="border-b border-slate-800 pb-4">
-                <h2 className="text-xl font-black text-white">Live eBay Sold Comps & Pricing</h2>
+                <h2 className="text-xl font-black text-white">Rough Price Guide</h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Query real-time sold prices across eBay and TCG markets to calibrate store buying offers.
+                  A quick keyword-based estimate to sanity-check offers. These are NOT live eBay or marketplace prices; always check current sold listings before making an offer.
                 </p>
               </div>
 
@@ -797,7 +804,7 @@ export default function DealerDashboard({
                   onClick={() => setCompResult(estimateCardPricing(compCardName, compGame, 'Raw NM'))}
                   className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white"
                 >
-                  Fetch eBay Sold Comps
+                  Get Estimate
                 </button>
               </div>
 
@@ -811,7 +818,7 @@ export default function DealerDashboard({
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="text-[10px] text-slate-400 block">eBay Last Sold Avg</span>
+                      <span className="text-[10px] text-slate-400 block">Estimated Value</span>
                       <span className="text-2xl font-black text-white">
                         £{compResult.ebayLastSoldAvg}
                       </span>
@@ -839,18 +846,18 @@ export default function DealerDashboard({
                   </div>
 
                   <div className="space-y-2 pt-2">
-                    <span className="text-xs font-bold text-slate-300">Market Comps Range:</span>
+                    <span className="text-xs font-bold text-slate-300">Estimated Range:</span>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">Low Sale</span>
+                        <span className="text-[10px] text-slate-400 block">Low</span>
                         <span className="font-bold text-slate-200">£{compResult.lowPrice}</span>
                       </div>
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">Average Comp</span>
+                        <span className="text-[10px] text-slate-400 block">Average</span>
                         <span className="font-bold text-white">£{compResult.ebayLastSoldAvg}</span>
                       </div>
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
-                        <span className="text-[10px] text-slate-400 block">High Sale</span>
+                        <span className="text-[10px] text-slate-400 block">High</span>
                         <span className="font-bold text-emerald-300">£{compResult.highPrice}</span>
                       </div>
                     </div>
@@ -869,7 +876,7 @@ export default function DealerDashboard({
               <div className="border-b border-slate-800 pb-4">
                 <h2 className="text-xl font-black text-white">Store Buylist Margins & Configuration</h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Adjust default cash and store credit buy percentages applied to eBay market averages.
+                  Adjust default cash and store credit buy percentages applied to estimated market values.
                 </p>
               </div>
 
@@ -899,7 +906,7 @@ export default function DealerDashboard({
               <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Store Cash Offer Margin (% of eBay Last Sold)
+                    Store Cash Offer Margin (% of estimated market value)
                   </label>
                   <input
                     type="number"
@@ -912,7 +919,7 @@ export default function DealerDashboard({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Store Credit Offer Margin (% of eBay Last Sold)
+                    Store Credit Offer Margin (% of estimated market value)
                   </label>
                   <input
                     type="number"

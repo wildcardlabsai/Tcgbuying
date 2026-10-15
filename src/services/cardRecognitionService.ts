@@ -191,13 +191,39 @@ export function recalculateCardValuation(
 }
 
 /**
+ * Downscale a photo (data URL) so requests stay well under Vercel's ~4.5MB body limit
+ * and local storage stays small. Non-data URLs and failures return the input unchanged.
+ */
+export async function shrinkImage(dataUrl: string, maxSide = 1280, quality = 0.8): Promise<string> {
+  if (!dataUrl.startsWith('data:image')) return dataUrl;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = dataUrl;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const out = canvas.toDataURL('image/jpeg', quality);
+    return out.length < dataUrl.length ? out : dataUrl;
+  } catch {
+    return dataUrl;
+  }
+}
+
+/**
  * Recognize an uploaded card image via /api/recognize-card
  */
 export async function recognizeCardPhoto(
-  base64Data: string,
+  rawBase64Data: string,
   fileName: string,
   userHint?: string
 ): Promise<RecognizedCardItem> {
+  const base64Data = await shrinkImage(rawBase64Data);
   const tempId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   try {
@@ -231,14 +257,16 @@ export async function recognizeCardPhoto(
     console.warn('API card recognition fallback:', err);
   }
 
-  // Graceful smart client-side matching fallback
-  const hintMatch = userHint
+  // Only the built-in sample cards (identified by hint) may be matched offline.
+  const fallback = userHint
     ? FALLBACK_CARDS.find((c) =>
         c.name.toLowerCase().includes(userHint.toLowerCase()) ||
         userHint.toLowerCase().includes(c.name.toLowerCase())
       )
     : null;
-  const fallback = hintMatch || FALLBACK_CARDS[Math.floor(Math.random() * FALLBACK_CARDS.length)];
+  if (!fallback) {
+    throw new Error('We could not identify that card right now. Please try again, or add the card by name.');
+  }
 
   return {
     tempId,
@@ -301,9 +329,11 @@ export async function searchAlternativeCards(queryStr: string, game: string): Pr
  * Scan a 9-pocket binder page or multi-card photo
  */
 export async function scanMultiCardBinderPhoto(
-  base64Data: string,
-  fileName: string
+  rawBase64Data: string,
+  fileName: string,
+  demo = false
 ): Promise<RecognizedCardItem[]> {
+  const base64Data = await shrinkImage(rawBase64Data, 1800, 0.8);
   try {
     const res = await fetch('/api/recognize-multi-cards', {
       method: 'POST',
@@ -311,6 +341,7 @@ export async function scanMultiCardBinderPhoto(
       body: JSON.stringify({
         imageBase64: base64Data,
         mimeType: 'image/jpeg',
+        demo,
       }),
     });
 
@@ -334,7 +365,11 @@ export async function scanMultiCardBinderPhoto(
     console.warn('Multi-card scan fallback:', err);
   }
 
-  // Fallback: 4 cards from catalog
+  if (!demo) {
+    throw new Error('We could not read that photo right now. Please try again with a clearer photo.');
+  }
+
+  // Demo binder only: 4 cards from catalog
   return FALLBACK_CARDS.slice(0, 4).map((c, idx) => ({
     tempId: `multi-fallback-${Date.now()}-${idx}`,
     userPhoto: base64Data,

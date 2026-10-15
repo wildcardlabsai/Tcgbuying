@@ -7,7 +7,7 @@ import { Flame, TrendingUp } from 'lucide-react';
 
 export default function BuylistTicker() {
   const tickerItems = [
-    { name: '1999 Base Set Charizard #4/102', rate: '72% eBay Comp', payout: '£205 Cash / £240 Credit', game: 'Pokémon' },
+    { name: '1999 Base Set Charizard #4/102', rate: '72% of market value', payout: '£205 Cash / £240 Credit', game: 'Pokémon' },
     { name: 'Umbreon VMAX Alt Art #215/203', rate: 'High Demand', payout: '£490 Cash / £575 Credit', game: 'Pokémon' },
     { name: 'Black Lotus Unlimited Edition', rate: 'Vintage Verified', payout: '£6,120 Wire / £7,140 Credit', game: 'MTG' },
     { name: 'Pikachu Illustrator CoroCoro Promo', rate: 'PSA 9/10 Premium', payout: 'Instant Bank Wire', game: 'Pokémon' },

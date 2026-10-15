@@ -13,6 +13,28 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
+import { IS_LOCAL } from '../config';
+import { readJson, writeJson } from './localStore';
+
+// ---------- Local mode (browser localStorage) ----------
+type RawDoc = Record<string, any> & { id: string; dealerId: string };
+const SUBS_KEY = 'tcg_submissions';
+const localSubListeners = new Set<() => void>();
+
+const readLocalDocs = () => readJson<RawDoc[]>(SUBS_KEY, []);
+function writeLocalDocs(docs: RawDoc[]): boolean {
+  const ok = writeJson(SUBS_KEY, docs);
+  if (ok) localSubListeners.forEach((fn) => fn());
+  return ok;
+}
+function patchLocalDoc(dealerId: string, id: string, patch: Record<string, any>): boolean {
+  const docs = readLocalDocs();
+  const i = docs.findIndex((d) => d.id === id && d.dealerId === dealerId);
+  if (i < 0) return false;
+  docs[i] = { ...docs[i], ...patch, updatedAt: Date.now() };
+  return writeLocalDocs(docs);
+}
+
 
 export interface SubmittedCardItem {
   id: string;
@@ -56,6 +78,10 @@ export interface LiveSubmission {
   offeredAmount?: string;
 }
 
+function toMillis(t: any): number {
+  return typeof t === 'number' ? t : (t?.toMillis?.() ?? 0);
+}
+
 function mapSubmission(id: string, data: Record<string, any>): LiveSubmission {
   return {
     id,
@@ -90,11 +116,28 @@ export function subscribeToSubmissions(
 ) {
   const colRef = collection(db, 'dealers', dealerId, 'submissions');
 
+  if (IS_LOCAL) {
+    const emit = () => {
+      const list = readLocalDocs()
+        .filter((d) => d.dealerId === dealerId)
+        .map((d) => mapSubmission(d.id, d));
+      list.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+      onUpdate(list);
+    };
+    localSubListeners.add(emit);
+    window.addEventListener('storage', emit);
+    emit();
+    return () => {
+      localSubListeners.delete(emit);
+      window.removeEventListener('storage', emit);
+    };
+  }
+
   return onSnapshot(
     colRef,
     (snapshot) => {
       const list = snapshot.docs.map((d) => mapSubmission(d.id, d.data()));
-      list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      list.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
       onUpdate(list);
     },
     (error) => {
@@ -111,6 +154,10 @@ export function subscribeToSubmissions(
 export async function getSubmissionByRef(dealerId: string, ref: string): Promise<LiveSubmission | null> {
   const id = ref.trim().replace(/^#/, '').toUpperCase();
   if (!/^[A-Z0-9-]{4,40}$/.test(id)) return null;
+  if (IS_LOCAL) {
+    const d = readLocalDocs().find((x) => x.dealerId === dealerId && x.id === id);
+    return d ? mapSubmission(d.id, d) : null;
+  }
   try {
     const snap = await getDoc(doc(db, 'dealers', dealerId, 'submissions', id));
     return snap.exists() ? mapSubmission(snap.id, snap.data()) : null;
@@ -149,6 +196,33 @@ export async function createCustomerSubmission(
 ): Promise<{ success: boolean; ref: string; id: string }> {
   const id = generateReferenceId();
   const ref = `#${id}`;
+  if (IS_LOCAL) {
+    const base = {
+      id,
+      dealerId,
+      reference: ref,
+      ...submission,
+      status: 'New',
+      notes: submission.notes || 'Submitted via online card recognition portal',
+      payoutMethodDetails: submission.payoutMethodDetails || '',
+      photos: submission.photos || [],
+      items: submission.items || [],
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    let ok = writeLocalDocs([...readLocalDocs(), base]);
+    if (!ok) {
+      // Storage is small (~5MB): retry without the heavy base64 photos.
+      const slim = {
+        ...base,
+        photos: [],
+        items: base.items.map((i) => (i.userPhoto?.startsWith('data:') ? { ...i, userPhoto: '' } : i)),
+      };
+      ok = writeLocalDocs([...readLocalDocs(), slim]);
+    }
+    return { success: ok, ref, id };
+  }
   try {
     await setDoc(doc(db, 'dealers', dealerId, 'submissions', id), {
       dealerId,
@@ -188,6 +262,12 @@ export async function updateSubmissionStatus(
   dealerOfferNotes: string | undefined,
   dealerId: string
 ) {
+  if (IS_LOCAL) {
+    const patch: Record<string, any> = { status: newStatus };
+    if (offerValue) patch.offeredAmount = offerValue;
+    if (dealerOfferNotes) patch.dealerOfferNotes = dealerOfferNotes;
+    return patchLocalDoc(dealerId, submissionId, patch);
+  }
   try {
     const docRef = doc(db, 'dealers', dealerId, 'submissions', submissionId);
     const updates: Record<string, any> = {
@@ -212,6 +292,7 @@ export async function updateSubmissionCardItem(
   updatedItems: SubmittedCardItem[],
   dealerId: string
 ) {
+  if (IS_LOCAL) return patchLocalDoc(dealerId, submissionId, { items: updatedItems });
   try {
     const docRef = doc(db, 'dealers', dealerId, 'submissions', submissionId);
     await updateDoc(docRef, {

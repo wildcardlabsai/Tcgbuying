@@ -265,6 +265,7 @@ export default function HeroSection({
                             </tbody>
                           </table>
                         </div>
+                        <p className="mt-2 text-[9px] text-slate-400 italic">Sample data for illustration. Create a free account to try it with your own shop.</p>
                       </div>
                     </div>
                   </div>

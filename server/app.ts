@@ -6,6 +6,7 @@
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
+import { emailRouter } from './email';
 
 dotenv.config();
 
@@ -14,6 +15,8 @@ const app = express();
 // Support large image payloads (base64 card photos)
 app.use(express.json({ limit: '30mb' }));
 app.use(express.urlencoded({ extended: true, limit: '30mb' }));
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 // Initialize Google GenAI if key is present
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -377,7 +380,7 @@ Format your response as valid JSON ONLY without markdown backticks:
 }`;
 
         const response = await aiClient.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: GEMINI_MODEL,
           contents: [
             {
               role: 'user',
@@ -412,19 +415,15 @@ Format your response as valid JSON ONLY without markdown backticks:
         console.warn('Gemini vision detection warning:', geminiError);
         if (userHint) {
           detectedName = userHint;
+        } else if (!hintOrUrlMatch) {
+          res.status(502).json({ success: false, error: 'recognition_failed' });
+          return;
         }
       }
     } else if (!hintOrUrlMatch) {
-      const catalog = BENCHMARK_CARDS;
-      const randomCard = catalog[Math.floor(Math.random() * catalog.length)];
-      detectedName = userHint || randomCard.name;
-      detectedGame = randomCard.game;
-      detectedSet = randomCard.setName;
-      detectedNumber = randomCard.cardNumber;
-      detectedRarity = randomCard.rarity;
-      detectedCondition = 'Near Mint';
-      confidence = 0.95;
-      notes = 'Card art matched cleanly against official reference archive.';
+      // No vision model configured and nothing to go on: say so rather than inventing a card.
+      res.status(503).json({ success: false, error: 'recognition_unavailable' });
+      return;
     }
 
     const matchedData = await fetchCardFromFreeApis(detectedName, detectedGame);
@@ -435,26 +434,8 @@ Format your response as valid JSON ONLY without markdown backticks:
     const storeCashOffer = Math.round(finalMarketPrice * 0.72);
     const storeCreditOffer = Math.round(finalMarketPrice * 0.84);
 
-    const ebayRecentComps = (matchedData as any).ebaySoldComps || [
-      {
-        title: `${matchedData.name} ${matchedData.setName} ${detectedCondition} Authentic Sale`,
-        price: Math.round(finalMarketPrice * 1.05),
-        date: '14 Oct 2026',
-        condition: detectedCondition,
-      },
-      {
-        title: `${matchedData.name} Holo Foil Card Collector Market Comp`,
-        price: Math.round(finalMarketPrice * 0.95),
-        date: '10 Oct 2026',
-        condition: detectedCondition,
-      },
-      {
-        title: `${matchedData.name} TCG Verified eBay Comp`,
-        price: finalMarketPrice,
-        date: '06 Oct 2026',
-        condition: detectedCondition,
-      },
-    ];
+    // Only real data is shown: no invented recent-sales list.
+    const ebayRecentComps: unknown[] = [];
 
     res.json({
       success: true,
@@ -541,7 +522,7 @@ Return valid JSON ONLY without markdown backticks:
 }`;
 
         const response = await aiClient.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: GEMINI_MODEL,
           contents: [
             {
               role: 'user',
@@ -572,6 +553,10 @@ Return valid JSON ONLY without markdown backticks:
     }
 
     // Fallback if vision didn't parse array: use benchmark collection items
+    if (detectedCards.length === 0 && req.body.demo !== true) {
+      res.status(aiClient ? 502 : 503).json({ success: false, error: aiClient ? 'recognition_failed' : 'recognition_unavailable' });
+      return;
+    }
     if (detectedCards.length === 0) {
       detectedCards = [
         {
@@ -642,7 +627,7 @@ Return valid JSON ONLY without markdown backticks:
             storeCashOffer,
             storeCreditOffer,
             ebayLastSoldAvg: basePrice,
-            ebayRecentComps: (matched as any).ebaySoldComps || [],
+            ebayRecentComps: [],
           },
         };
       })
@@ -739,7 +724,7 @@ app.post('/api/parse-buylist', async (req: Request, res: Response): Promise<void
           storeCashOffer,
           storeCreditOffer,
           ebayLastSoldAvg: finalPrice,
-          ebayRecentComps: (matched as any).ebaySoldComps || [],
+          ebayRecentComps: [],
         });
       }
     }
@@ -781,6 +766,8 @@ app.get('/api/search-cards', async (req: Request, res: Response) => {
   const fetched = await fetchCardFromFreeApis(queryStr, game);
   res.json({ results: [fetched] });
 });
+
+app.use('/api', emailRouter);
 
 /**
  * Health check

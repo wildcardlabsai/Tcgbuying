@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { SubmissionRecord } from './DashboardWorkflowSection';
 import Logo from './Logo';
+import { sendContactMessage } from '../services/notifyService';
 
 /* =========================================================================
    1. GET STARTED / DEALER ONBOARDING MODAL
@@ -476,7 +477,7 @@ export function HowItWorksModal({ isOpen, onClose, onGetStarted }: HowItWorksMod
               <div>
                 <h5 className="font-bold text-xs text-slate-900">Single-Click Offers & Payout Tracking</h5>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Send offers directly to the customer via SMS/email with clear accept/counter options.
+                  Email offers directly to the customer with clear accept/counter options.
                 </p>
               </div>
             </div>
@@ -516,6 +517,27 @@ interface ContactModalProps {
 
 export function ContactModal({ isOpen, onClose }: ContactModalProps) {
   const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState({ name: '', store: '', email: '', message: '' });
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSending(true);
+    setSendError(null);
+    const result = await sendContactMessage(form);
+    setSending(false);
+    if (result === 'sent') {
+      setSubmitted(true);
+    } else {
+      const fallback = import.meta.env.VITE_CONTACT_EMAIL;
+      setSendError(
+        fallback
+          ? `We couldn't send your message from here. Please email us at ${fallback}.`
+          : "We couldn't send your message right now. Please try again later."
+      );
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -535,7 +557,7 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
               <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto" />
               <h4 className="font-bold text-slate-900">Message Received</h4>
               <p className="text-xs text-slate-500">
-                Our dealer support team will get back to you within 2 business hours.
+                Thanks for getting in touch. We'll reply to the email address you gave us.
               </p>
               <button
                 onClick={onClose}
@@ -545,18 +567,15 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
               </button>
             </div>
           ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setSubmitted(true);
-              }}
-              className="space-y-4"
-            >
+            <form onSubmit={handleSend} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Your Name</label>
                 <input
                   type="text"
                   required
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  maxLength={100}
                   placeholder="e.g. John Doe"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
                 />
@@ -566,7 +585,21 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
                 <input
                   type="text"
                   required
+                  value={form.store}
+                  onChange={(e) => setForm({ ...form, store: e.target.value })}
+                  maxLength={100}
                   placeholder="e.g. The Card Vault"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Your Email</label>
+                <input
+                  type="email"
+                  required
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="you@yourshop.co.uk"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
                 />
               </div>
@@ -575,15 +608,20 @@ export function ContactModal({ isOpen, onClose }: ContactModalProps) {
                 <textarea
                   rows={3}
                   required
+                  value={form.message}
+                  onChange={(e) => setForm({ ...form, message: e.target.value })}
+                  maxLength={4000}
                   placeholder="Tell us about your store or question..."
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs"
                 />
               </div>
+              {sendError && <p className="text-xs text-red-600">{sendError}</p>}
               <button
                 type="submit"
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                disabled={sending}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold text-xs rounded-lg transition-colors cursor-pointer"
               >
-                Send Message
+                {sending ? 'Sending…' : 'Send Message'}
               </button>
             </form>
           )}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import TrustBar from './components/TrustBar';
@@ -16,29 +16,37 @@ import Footer from './components/Footer';
 import FaqSection from './components/FaqSection';
 import BuylistTicker from './components/BuylistTicker';
 import RoiCalculatorSection from './components/RoiCalculatorSection';
-import CustomerDashboard from './components/CustomerDashboard';
-import DealerDashboard from './components/DealerDashboard';
+const CustomerDashboard = lazy(() => import('./components/CustomerDashboard'));
+const DealerDashboard = lazy(() => import('./components/DealerDashboard'));
 import SubmissionTrackerModal from './components/SubmissionTrackerModal';
 import {
   GetStartedModal,
   HowItWorksModal,
   ContactModal,
 } from './components/Modals';
+import LegalModal, { LegalDoc } from './components/LegalModal';
 import DealerAuthScreen from './components/DealerAuthScreen';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './firebase';
 import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
-import { ensureDealerProfile, getDealerBySlug, DealerProfile } from './services/authService';
+import { subscribeToAuth, getDealerBySlug, DealerProfile } from './services/authService';
 
 const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 
 export default function App() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>}>
+      <AppInner />
+    </Suspense>
+  );
+}
+
+function AppInner() {
   const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard'>(
     shopSlugParam ? 'customer_portal' : 'landing'
   );
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
   const [trackerRef, setTrackerRef] = useState('');
   const [submissionsList, setSubmissionsList] = useState<LiveSubmission[]>([]);
 
@@ -52,20 +60,10 @@ export default function App() {
   const [shopLookupDone, setShopLookupDone] = useState(!shopSlugParam);
 
   useEffect(() => {
-    return onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setDealer(null);
-        setUserEmail('');
-        setSubmissionsList([]);
-        setAuthReady(true);
-        return;
-      }
-      try {
-        setDealer(await ensureDealerProfile(user));
-        setUserEmail(user.email || '');
-      } catch {
-        setDealer(null);
-      }
+    return subscribeToAuth((state) => {
+      setDealer(state?.dealer ?? null);
+      setUserEmail(state?.email ?? '');
+      if (!state) setSubmissionsList([]);
       setAuthReady(true);
     });
   }, []);
@@ -207,8 +205,8 @@ export default function App() {
       {/* Footer */}
       <Footer
         onOpenContact={() => setIsContactOpen(true)}
-        onOpenTerms={() => alert('Terms of Service: Standard SaaS terms for licensed card game dealers.')}
-        onOpenPrivacy={() => alert('Privacy Policy: TCGBuyer strictly protects dealer and collector data.')}
+        onOpenTerms={() => setLegalDoc('terms')}
+        onOpenPrivacy={() => setLegalDoc('privacy')}
       />
 
       {/* Collector Live Submission Tracker & Offer Acceptance */}
@@ -226,6 +224,8 @@ export default function App() {
         onClose={() => setIsHowItWorksOpen(false)}
         onGetStarted={() => setCurrentView('customer_portal')}
       />
+
+      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
 
       {/* Contact Support */}
       <ContactModal

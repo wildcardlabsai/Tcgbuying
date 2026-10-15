@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import Logo from './Logo';
+import { IS_LOCAL } from '../config';
 import {
   signUpDealer,
   signInDealer,
@@ -79,6 +80,11 @@ export default function DealerAuthScreen({ onBackToHome }: DealerAuthScreenProps
 
       <main className="flex-1 flex items-center justify-center px-4 pb-16">
         <div className="w-full max-w-sm bg-[#0b1329] border border-slate-800 rounded-2xl p-6 shadow-2xl">
+          {IS_LOCAL && (
+            <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 mb-4">
+              Demo mode: accounts and submissions are stored only in this browser.
+            </p>
+          )}
           <h1 className="text-lg font-extrabold text-white">
             {mode === 'signup' ? 'Create your dealer account' : mode === 'reset' ? 'Reset your password' : 'Dealer sign in'}
           </h1>
@@ -94,9 +100,10 @@ export default function DealerAuthScreen({ onBackToHome }: DealerAuthScreenProps
             <>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || IS_LOCAL}
+                title={IS_LOCAL ? 'Available once Firebase is connected' : undefined}
                 onClick={() => run(signInDealerWithGoogle)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 disabled:opacity-60"
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4" viewBox="0 0 48 48" aria-hidden="true">
                   <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z" />
@@ -104,7 +111,7 @@ export default function DealerAuthScreen({ onBackToHome }: DealerAuthScreenProps
                   <path fill="#FBBC05" d="M10.5 28.7a14.5 14.5 0 0 1 0-9.4l-7.9-6.1a24 24 0 0 0 0 21.6l7.9-6.1z" />
                   <path fill="#34A853" d="M24 48c6.3 0 11.8-2.1 15.7-5.7l-7.5-5.8c-2.1 1.4-4.8 2.3-8.2 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.1C6.5 42.6 14.6 48 24 48z" />
                 </svg>
-                Continue with Google
+                Continue with Google{IS_LOCAL ? ' (coming soon)' : ''}
               </button>
               <div className="flex items-center gap-3 my-4 text-[11px] text-slate-500">
                 <div className="h-px flex-1 bg-slate-800" />

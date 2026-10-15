@@ -4,6 +4,7 @@
  */
 
 import {
+  onAuthStateChanged,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -14,11 +15,99 @@ import {
 } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../firebase';
+import { IS_LOCAL } from '../config';
+import { randomId, readJson, sha256, writeJson } from './localStore';
 
 export interface DealerProfile {
   id: string;
   name: string;
   slug: string;
+}
+
+export interface AuthState {
+  dealer: DealerProfile;
+  email: string;
+}
+
+// ---------- Local mode (browser localStorage) ----------
+interface LocalAccount {
+  uid: string;
+  email: string;
+  passwordHash: string;
+}
+const ACCOUNTS_KEY = 'tcg_accounts';
+const DEALERS_KEY = 'tcg_dealers';
+const SESSION_KEY = 'tcg_session';
+const localAuthListeners = new Set<() => void>();
+
+function authError(code: string): Error & { code: string } {
+  return Object.assign(new Error(code), { code });
+}
+
+function localState(): AuthState | null {
+  const uid = readJson<string | null>(SESSION_KEY, null);
+  if (!uid) return null;
+  const account = readJson<LocalAccount[]>(ACCOUNTS_KEY, []).find((a) => a.uid === uid);
+  const dealer = readJson<DealerProfile[]>(DEALERS_KEY, []).find((d) => d.id === uid);
+  return account && dealer ? { dealer, email: account.email } : null;
+}
+
+function notifyLocalAuth() {
+  localAuthListeners.forEach((fn) => fn());
+}
+
+async function localSignUp(shopName: string, email: string, password: string): Promise<DealerProfile> {
+  const cleanEmail = email.trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) throw authError('auth/invalid-email');
+  if (password.length < 6) throw authError('auth/weak-password');
+  const accounts = readJson<LocalAccount[]>(ACCOUNTS_KEY, []);
+  if (accounts.some((a) => a.email === cleanEmail)) throw authError('auth/email-already-in-use');
+  const uid = randomId();
+  const name = shopName.trim().slice(0, 100);
+  const dealer: DealerProfile = { id: uid, name, slug: `${slugify(name)}-${uid.slice(0, 5)}` };
+  accounts.push({ uid, email: cleanEmail, passwordHash: await sha256(password) });
+  if (
+    !writeJson(ACCOUNTS_KEY, accounts) ||
+    !writeJson(DEALERS_KEY, [...readJson<DealerProfile[]>(DEALERS_KEY, []), dealer]) ||
+    !writeJson(SESSION_KEY, uid)
+  ) {
+    throw authError('local/storage-failed');
+  }
+  notifyLocalAuth();
+  return dealer;
+}
+
+async function localSignIn(email: string, password: string): Promise<DealerProfile> {
+  const cleanEmail = email.trim().toLowerCase();
+  const account = readJson<LocalAccount[]>(ACCOUNTS_KEY, []).find((a) => a.email === cleanEmail);
+  if (!account || account.passwordHash !== (await sha256(password))) throw authError('auth/invalid-credential');
+  const dealer = readJson<DealerProfile[]>(DEALERS_KEY, []).find((d) => d.id === account.uid);
+  if (!dealer) throw authError('auth/invalid-credential');
+  writeJson(SESSION_KEY, account.uid);
+  notifyLocalAuth();
+  return dealer;
+}
+
+/** Subscribe to the signed-in dealer (null when signed out). Returns an unsubscribe function. */
+export function subscribeToAuth(cb: (state: AuthState | null) => void): () => void {
+  if (IS_LOCAL) {
+    const emit = () => cb(localState());
+    localAuthListeners.add(emit);
+    window.addEventListener('storage', emit);
+    emit();
+    return () => {
+      localAuthListeners.delete(emit);
+      window.removeEventListener('storage', emit);
+    };
+  }
+  return onAuthStateChanged(auth, async (user) => {
+    if (!user) return cb(null);
+    try {
+      cb({ dealer: await ensureDealerProfile(user), email: user.email || '' });
+    } catch {
+      cb(null);
+    }
+  });
 }
 
 function slugify(name: string): string {
@@ -57,6 +146,7 @@ export async function ensureDealerProfile(user: User, shopName?: string): Promis
 }
 
 export async function getDealerBySlug(slug: string): Promise<DealerProfile | null> {
+  if (IS_LOCAL) return readJson<DealerProfile[]>(DEALERS_KEY, []).find((d) => d.slug === slug) ?? null;
   try {
     const snap = await getDocs(query(collection(db, 'dealers'), where('slug', '==', slug), limit(1)));
     if (snap.empty) return null;
@@ -69,26 +159,35 @@ export async function getDealerBySlug(slug: string): Promise<DealerProfile | nul
 }
 
 export async function signUpDealer(shopName: string, email: string, password: string): Promise<DealerProfile> {
+  if (IS_LOCAL) return localSignUp(shopName, email, password);
   const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
   await updateProfile(cred.user, { displayName: shopName.trim() });
   return ensureDealerProfile(cred.user, shopName);
 }
 
 export async function signInDealer(email: string, password: string): Promise<DealerProfile> {
+  if (IS_LOCAL) return localSignIn(email, password);
   const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
   return ensureDealerProfile(cred.user);
 }
 
 export async function signInDealerWithGoogle(): Promise<DealerProfile> {
+  if (IS_LOCAL) throw authError('local/google-unavailable');
   const cred = await signInWithPopup(auth, googleProvider);
   return ensureDealerProfile(cred.user);
 }
 
 export function resetPassword(email: string) {
+  if (IS_LOCAL) return Promise.reject(authError('local/reset-unavailable'));
   return sendPasswordResetEmail(auth, email.trim());
 }
 
 export function signOutDealer() {
+  if (IS_LOCAL) {
+    writeJson(SESSION_KEY, null);
+    notifyLocalAuth();
+    return Promise.resolve();
+  }
   return fbSignOut(auth);
 }
 
@@ -119,6 +218,12 @@ export function authErrorMessage(err: unknown): string {
       return 'This sign-in method is not enabled in Firebase yet (Authentication → Sign-in method).';
     case 'permission-denied':
       return 'Could not create your dealer profile (permission denied). Check the Firestore rules are deployed.';
+    case 'local/google-unavailable':
+      return 'Google sign-in becomes available once the shared database (Firebase) is connected.';
+    case 'local/reset-unavailable':
+      return 'Password reset becomes available once the shared database (Firebase) is connected.';
+    case 'local/storage-failed':
+      return 'Could not save your account in this browser (storage full or blocked).';
     default:
       return (err as Error)?.message || 'Something went wrong. Please try again.';
   }
