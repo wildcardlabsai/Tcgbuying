@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "Dealer": {
+      "title": "Dealer",
+      "description": "Registered TCG card store or dealer operating a buying portal",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "slug": { "type": "string", "maxLength": 50, "pattern": "^[a-z0-9-]+$" },
+        "email": { "type": "string", "maxLength": 120 },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "currency": { "type": "string", "maxLength": 5 },
+        "defaultMarginPercent": { "type": "number" },
+        "acceptedGames": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["name", "slug", "email", "ownerUid", "currency"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Card collection submitted by a customer for store appraisal and purchase",
+      "type": "object",
+      "properties": {
+        "dealerId": { "type": "string", "maxLength": 128 },
+        "reference": { "type": "string", "maxLength": 20 },
+        "customerName": { "type": "string", "maxLength": 80 },
+        "customerEmail": { "type": "string", "maxLength": 120 },
+        "customerPhone": { "type": "string", "maxLength": 30 },
+        "collection": { "type": "string", "maxLength": 80 },
+        "cardCount": { "type": "number" },
+        "estimatedValue": { "type": "number" },
+        "offerValue": { "type": "number" },
+        "status": {
+          "type": "string",
+          "enum": ["New", "Review", "Offer Sent", "Accepted", "Completed", "Declined"]
+        },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "photos": { "type": "array" },
+        "cardItems": { "type": "array" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["dealerId", "reference", "customerName", "customerEmail", "collection", "cardCount", "status"]
+    },
+    "MarketPrice": {
+      "title": "MarketPrice",
+      "description": "Verified eBay sold comps and market pricing averages for cards",
+      "type": "object",
+      "properties": {
+        "cardName": { "type": "string", "maxLength": 120 },
+        "game": { "type": "string", "maxLength": 50 },
+        "setName": { "type": "string", "maxLength": 80 },
+        "ebayLastSoldAvg": { "type": "number" },
+        "recentSalesCount": { "type": "number" },
+        "lastUpdated": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["cardName", "game", "ebayLastSoldAvg"]
+    }
+  },
+  "firestore": {
+    "/dealers/{dealerId}": {
+      "schema": { "$ref": "#/entities/Dealer" },
+      "description": "Dealer profiles and store configurations"
+    },
+    "/dealers/{dealerId}/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/Submission" },
+      "description": "Customer collection submissions sent to a dealer"
+    },
+    "/market_prices/{priceId}": {
+      "schema": { "$ref": "#/entities/MarketPrice" },
+      "description": "Market price registry with eBay last sold comps"
+    }
+  }
+}

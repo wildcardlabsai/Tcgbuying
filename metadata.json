@@ -1,0 +1,6 @@
+{
+  "name": "TCGBuyer - TCG Buying Software for Dealers",
+  "description": "TCGBuyer gives trading card shops their own online buying portal, making it easier for collectors to submit cards and for dealers to manage the buying process from one place.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

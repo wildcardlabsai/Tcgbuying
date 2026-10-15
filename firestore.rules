@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isDealerOwner(dealerId) {
+      return isSignedIn() && request.auth.uid == dealerId;
+    }
+
+    // Dealer Store Profiles
+    match /dealers/{dealerId} {
+      allow read: if isValidId(dealerId);
+      allow create: if isValidId(dealerId) && isDealerOwner(dealerId) &&
+        incoming().name is string && incoming().name.size() <= 100 &&
+        incoming().slug is string && incoming().slug.size() <= 50;
+      allow update: if isValidId(dealerId) && isDealerOwner(dealerId);
+      allow delete: if false;
+
+      // Submissions Subcollection
+      match /submissions/{submissionId} {
+        // Dealer and customers can read submissions
+        allow read: if isValidId(submissionId);
+
+        // Public intake: Any customer can submit cards to the store portal
+        allow create: if isValidId(submissionId) &&
+          incoming().dealerId == dealerId &&
+          incoming().reference is string && incoming().reference.size() <= 30 &&
+          incoming().customerName is string && incoming().customerName.size() <= 80 &&
+          incoming().customerEmail is string && incoming().customerEmail.size() <= 120 &&
+          incoming().cardCount is number && incoming().cardCount >= 1 &&
+          incoming().status in ['New', 'Review'];
+
+        // Dealer updates offer, notes, cards status; or customer accepts/declines
+        allow update: if isValidId(submissionId);
+
+        allow delete: if isValidId(submissionId);
+      }
+    }
+
+    // Market Prices (eBay last sold comps cache)
+    match /market_prices/{priceId} {
+      allow read: if isValidId(priceId);
+      allow write: if isSignedIn();
+    }
+
+    // Connection testing
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+  }
+}
