@@ -260,6 +260,7 @@ export async function recognizeCardPhoto(
   onStage?.('Identifying the card…');
   const tempId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   let failureCode: string | undefined;
+  let aiDetail = '';
 
   try {
     const res = await fetchWithTimeout('/api/recognize-card', {
@@ -290,7 +291,9 @@ export async function recognizeCardPhoto(
       }
       failureCode = 'bad_reply';
     } else {
-      failureCode = (await res.json().catch(() => null))?.error || `http_${res.status}`;
+      const body = await res.json().catch(() => null);
+      failureCode = body?.error || `http_${res.status}`;
+      if (body?.detail) aiDetail = String(body.detail);
     }
   } catch (err) {
     console.warn('API card recognition fallback:', err);
@@ -320,7 +323,7 @@ export async function recognizeCardPhoto(
       console.warn('OCR backup failed:', err);
       const reason = err instanceof OcrError ? err.reason : 'engine';
       const ai = failureCode ? failureCode.replace('recognition_', '') : 'no_response';
-      throw new Error(`${recognitionErrorMessage('ocr_failed')} [photo reader: ${ai} · backup: ${reason}]`);
+      throw new Error(`${recognitionErrorMessage('ocr_failed')} [photo reader: ${ai} · backup: ${reason}]${aiDetail ? ` {${aiDetail}}` : ''}`);
     }
   }
 

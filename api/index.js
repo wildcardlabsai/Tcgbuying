@@ -70118,18 +70118,20 @@ function classifyAiError(err) {
   return "unknown";
 }
 var AiUnavailableError = class extends Error {
-  constructor(kind) {
+  constructor(kind, detail = "") {
     super(`AI unavailable: ${kind}`);
     this.kind = kind;
+    this.detail = detail;
   }
 };
 async function generateWithFallback(params) {
   const models = [.../* @__PURE__ */ new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite"])];
   let last = "unknown";
+  let lastDetail = "";
   const deadline = Date.now() + 15e3;
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, void 0]) {
-      if (Date.now() > deadline) throw new AiUnavailableError(last === "unknown" ? "timeout" : last);
+      if (Date.now() > deadline) throw new AiUnavailableError(last === "unknown" ? "timeout" : last, lastDetail);
       try {
         return await aiClient.models.generateContent({
           model,
@@ -70138,17 +70140,19 @@ async function generateWithFallback(params) {
         });
       } catch (err) {
         last = classifyAiError(err);
-        if (last === "quota" || last === "invalid_key" || last === "timeout") throw new AiUnavailableError(last);
+        lastDetail = `${model}: ${String(err?.status ?? "")} ${String(err?.message ?? err)}`.replace(/\s+/g, " ").slice(0, 160);
+        console.warn("Gemini call failed:", lastDetail);
+        if (last === "quota" || last === "invalid_key" || last === "timeout") throw new AiUnavailableError(last, lastDetail);
         if (last === "model_unavailable") break;
       }
     }
   }
-  throw new AiUnavailableError(last);
+  throw new AiUnavailableError(last, lastDetail);
 }
 function aiErrorResponse(err) {
   const kind = err instanceof AiUnavailableError ? err.kind : "unknown";
   const status = kind === "unknown" ? 502 : 503;
-  return { status, body: { success: false, error: kind === "unknown" ? "recognition_failed" : `recognition_${kind}` } };
+  return { status, body: { success: false, error: kind === "unknown" ? "recognition_failed" : `recognition_${kind}`, detail: err instanceof AiUnavailableError ? err.detail : "" } };
 }
 async function resolveImageBase64(input, fallbackMime = "image/jpeg") {
   if (!input || typeof input !== "string") {

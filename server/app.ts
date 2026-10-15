@@ -111,7 +111,7 @@ function classifyAiError(err: any): AiFailure {
 }
 
 class AiUnavailableError extends Error {
-  constructor(public kind: AiFailure) {
+  constructor(public kind: AiFailure, public detail = '') {
     super(`AI unavailable: ${kind}`);
   }
 }
@@ -123,10 +123,11 @@ class AiUnavailableError extends Error {
 async function generateWithFallback(params: { contents: any }) {
   const models = [...new Set([GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite'])];
   let last: AiFailure = 'unknown';
+  let lastDetail = '';
   const deadline = Date.now() + 15_000; // total budget across every attempt
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, undefined]) {
-      if (Date.now() > deadline) throw new AiUnavailableError(last === 'unknown' ? 'timeout' : last);
+      if (Date.now() > deadline) throw new AiUnavailableError(last === 'unknown' ? 'timeout' : last, lastDetail);
       try {
         return await aiClient!.models.generateContent({
           model,
@@ -135,19 +136,21 @@ async function generateWithFallback(params: { contents: any }) {
         });
       } catch (err) {
         last = classifyAiError(err);
-        if (last === 'quota' || last === 'invalid_key' || last === 'timeout') throw new AiUnavailableError(last);
+        lastDetail = `${model}: ${String((err as any)?.status ?? '')} ${String((err as any)?.message ?? err)}`.replace(/\s+/g, ' ').slice(0, 160);
+        console.warn('Gemini call failed:', lastDetail);
+        if (last === 'quota' || last === 'invalid_key' || last === 'timeout') throw new AiUnavailableError(last, lastDetail);
         if (last === 'model_unavailable') break; // try the next model
       }
     }
   }
-  throw new AiUnavailableError(last);
+  throw new AiUnavailableError(last, lastDetail);
 }
 
 /** HTTP error body for an AI failure, so the UI can explain what is wrong. */
 function aiErrorResponse(err: unknown) {
   const kind = err instanceof AiUnavailableError ? err.kind : 'unknown';
   const status = kind === 'unknown' ? 502 : 503;
-  return { status, body: { success: false, error: kind === 'unknown' ? 'recognition_failed' : `recognition_${kind}` } };
+  return { status, body: { success: false, error: kind === 'unknown' ? 'recognition_failed' : `recognition_${kind}`, detail: err instanceof AiUnavailableError ? err.detail : '' } };
 }
 
 
