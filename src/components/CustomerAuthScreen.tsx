@@ -13,6 +13,7 @@ import {
   authErrorMessage,
 } from '../services/authService';
 import { IS_LOCAL } from '../config';
+import { useLegal } from '../LegalContext';
 
 interface CustomerAuthScreenProps {
   shopName?: string;
@@ -30,6 +31,8 @@ export default function CustomerAuthScreen({ shopName, onBack }: CustomerAuthScr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
+  const openLegal = useLegal();
 
   // A successful sign-in is picked up by App's auth listener, which leaves this screen.
   const run = async (fn: () => Promise<unknown>) => {
@@ -54,6 +57,7 @@ export default function CustomerAuthScreen({ shopName, onBack }: CustomerAuthScr
       });
     } else if (mode === 'signup') {
       if (!name.trim()) return setError('Please enter your name.');
+      if (!agreed) return setError('Please tick the box to confirm you have read the Terms and Privacy Policy.');
       run(() => signUpCustomer(name, email, password));
     } else {
       run(() => signInCustomer(email, password));
@@ -83,13 +87,29 @@ export default function CustomerAuthScreen({ shopName, onBack }: CustomerAuthScr
               : `Track your submissions and offers${shopName ? ` from ${shopName}` : ''} and every other shop you sell to, all in one place.`}
           </p>
 
+          {mode === 'signup' && (
+            <div className="mb-4">
+              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5" />
+                <span>
+                  I have read and agree to the{' '}
+                  <button type="button" onClick={() => openLegal('terms')} className="text-blue-400 underline">Terms &amp; Conditions</button> and{' '}
+                  <button type="button" onClick={() => openLegal('privacy')} className="text-blue-400 underline">Privacy Policy</button>.
+                </span>
+              </label>
+            </div>
+          )}
+
           {mode !== 'reset' && (
             <>
               <button
                 type="button"
                 disabled={busy || IS_LOCAL}
                 title={IS_LOCAL ? 'Available once Firebase is connected' : undefined}
-                onClick={() => run(signInCustomerWithGoogle)}
+                onClick={() => {
+                  if (mode === 'signup' && !agreed) return setError('Please tick the box to confirm you have read the Terms and Privacy Policy.');
+                  run(signInCustomerWithGoogle);
+                }}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4" viewBox="0 0 48 48" aria-hidden="true">
@@ -100,6 +120,13 @@ export default function CustomerAuthScreen({ shopName, onBack }: CustomerAuthScr
                 </svg>
                 Continue with Google{IS_LOCAL ? ' (coming soon)' : ''}
               </button>
+              {mode === 'signin' && (
+                <p className="text-[10px] text-slate-500 mt-1.5 text-center">
+                  New to TCGBuyer? Continuing with Google means you agree to our{' '}
+                  <button type="button" onClick={() => openLegal('terms')} className="underline hover:text-slate-300">Terms</button> and{' '}
+                  <button type="button" onClick={() => openLegal('privacy')} className="underline hover:text-slate-300">Privacy Policy</button>.
+                </p>
+              )}
               <div className="flex items-center gap-3 my-4 text-[11px] text-slate-500">
                 <div className="h-px flex-1 bg-slate-800" />
                 or use email
@@ -116,6 +143,7 @@ export default function CustomerAuthScreen({ shopName, onBack }: CustomerAuthScr
             {mode !== 'reset' && (
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" required minLength={6} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} className={input} />
             )}
+
 
             {error && <p role="alert" className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</p>}
             {info && <p className="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-3 py-2">{info}</p>}

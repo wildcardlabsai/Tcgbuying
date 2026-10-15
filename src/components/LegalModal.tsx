@@ -5,11 +5,37 @@
 
 import { X } from 'lucide-react';
 
-export type LegalDoc = 'terms' | 'privacy';
+import { LEGAL_UPDATED as UPDATED, OPERATOR_NAME, OPERATOR_URL } from '../legalMeta';
 
-const UPDATED = '15 October 2026';
+export type LegalDoc = 'terms' | 'privacy' | 'about';
 
 const DOCS: Record<LegalDoc, { title: string; sections: { h: string; p: string[] }[] }> = {
+  about: {
+    title: 'About TCGBuyer',
+    sections: [
+      {
+        h: 'What TCGBuyer is',
+        p: [
+          'TCGBuyer gives trading card shops their own online buying page. Collectors photograph or list the cards they want to sell, see an estimated offer, and send the collection to the shop. The shop reviews it, makes an offer, and the collector accepts, counters or declines.',
+          'Shops keep control: they set their own cash and store-credit percentages, bulk rates, branding, contact details and the final offer after inspecting the cards.',
+        ],
+      },
+      {
+        h: 'For collectors',
+        p: [
+          'You can submit cards without an account, or create one (email or Google) to see every submission and offer across the shops you sell to in one place.',
+          'Values shown are estimates from public price sources. The shop confirms the real offer once they have seen your cards.',
+        ],
+      },
+      {
+        h: 'Who is behind it',
+        p: [
+          `TCGBuyer is built and founded by ${OPERATOR_NAME}.`,
+          `Visit ${OPERATOR_URL.replace('https://', '')} to find out more, or use the Contact link on this website to get in touch.`,
+        ],
+      },
+    ],
+  },
   terms: {
     title: 'Terms of Service',
     sections: [

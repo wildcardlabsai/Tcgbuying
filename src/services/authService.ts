@@ -18,6 +18,7 @@ import { IS_LOCAL, LOGIN_BYPASS } from '../config';
 import { randomId, readJson, sha256, writeJson } from './localStore';
 import { Storefront, DEFAULT_PRICING, EMPTY_STOREFRONT, getStorefront, saveStorefront, sanitizeStorefront } from './storefrontService';
 import { CurrencyCode } from './currency';
+import { LEGAL_VERSION } from '../legalMeta';
 
 export interface DealerProfile {
   id: string;
@@ -228,7 +229,7 @@ export async function signUpDealer(input: DealerSignUpInput): Promise<DealerProf
       id: account.uid,
       name: shopName,
       slug: `${slugify(shopName)}-${account.uid.slice(0, 5)}`,
-      onboarding,
+      onboarding: { ...onboarding, termsVersion: LEGAL_VERSION, termsAcceptedAt: Date.now() } as DealerOnboarding,
     };
     writeJson(DEALERS_KEY, [...readJson<LocalDealer[]>(DEALERS_KEY, []), dealer]);
     await saveStorefront(account.uid, storefront);
@@ -246,6 +247,8 @@ export async function signUpDealer(input: DealerSignUpInput): Promise<DealerProf
     await setDoc(doc(db, 'dealers', uid, 'private', 'profile'), {
       ...onboarding,
       email: input.email.trim(),
+      termsVersion: LEGAL_VERSION,
+      termsAcceptedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
     });
     await saveStorefront(uid, storefront);

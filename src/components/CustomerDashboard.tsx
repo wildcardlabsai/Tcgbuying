@@ -51,6 +51,7 @@ import {
 import { createCustomerSubmission, SubmittedCardItem, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
 import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
+import PortalFooter from './PortalFooter';
 import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
 import { useMoney } from '../CurrencyContext';
 import CurrencySelect from './CurrencySelect';
@@ -1934,6 +1935,7 @@ export default function CustomerDashboard({
         )}
 
         <StorefrontContact storefront={storefront} />
+        <PortalFooter />
       </main>
 
       {/* SEARCH ALTERNATIVE MODAL */}

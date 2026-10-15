@@ -26,7 +26,7 @@ import {
   ContactModal,
 } from './components/Modals';
 import { CurrencyProvider, useMoney } from './CurrencyContext';
-import LegalModal, { LegalDoc } from './components/LegalModal';
+import { LegalProvider, useLegal } from './LegalContext';
 import DealerAuthScreen from './components/DealerAuthScreen';
 import DealerOnboarding from './components/DealerOnboarding';
 import CustomerAuthScreen from './components/CustomerAuthScreen';
@@ -41,9 +41,11 @@ const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 export default function App() {
   return (
     <CurrencyProvider>
+      <LegalProvider>
       <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>}>
         <AppInner />
       </Suspense>
+      </LegalProvider>
     </CurrencyProvider>
   );
 }
@@ -56,7 +58,7 @@ function AppInner() {
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
-  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
+  const openLegal = useLegal();
   const [trackerRef, setTrackerRef] = useState('');
   const [submissionsList, setSubmissionsList] = useState<LiveSubmission[]>([]);
 
@@ -217,10 +219,9 @@ function AppInner() {
         <DealerOnboarding
           onBackToHome={() => setCurrentView('landing')}
           onSignIn={() => setCurrentView('dealer_dashboard')}
-          onOpenLegal={setLegalDoc}
+          onOpenLegal={openLegal}
         />
-        <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
-      </>
+        </>
     );
   }
 
@@ -322,8 +323,9 @@ function AppInner() {
       <Footer
         onOpenContact={() => setIsContactOpen(true)}
         onOpenCollectorLogin={() => openCollectorSignIn('customer_account')}
-        onOpenTerms={() => setLegalDoc('terms')}
-        onOpenPrivacy={() => setLegalDoc('privacy')}
+        onOpenTerms={() => openLegal('terms')}
+        onOpenPrivacy={() => openLegal('privacy')}
+        onOpenAbout={() => openLegal('about')}
       />
 
       {/* Spacer so the sticky bar never covers the footer (mobile only) */}
@@ -356,7 +358,6 @@ function AppInner() {
         onGetStarted={() => setCurrentView('dealer_signup')}
       />
 
-      <LegalModal doc={legalDoc} onClose={() => setLegalDoc(null)} />
 
       {/* Contact Support */}
       <ContactModal

@@ -4,15 +4,17 @@
  */
 
 import Logo from './Logo';
+import { OPERATOR_NAME, OPERATOR_URL } from '../legalMeta';
 
 interface FooterProps {
   onOpenContact?: () => void;
   onOpenTerms?: () => void;
   onOpenPrivacy?: () => void;
   onOpenCollectorLogin?: () => void;
+  onOpenAbout?: () => void;
 }
 
-export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOpenCollectorLogin }: FooterProps) {
+export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOpenCollectorLogin, onOpenAbout }: FooterProps) {
   return (
     <footer className="bg-white border-t border-slate-200 py-12 text-xs text-slate-500">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -41,6 +43,14 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
             <a href="#faq" className="hover:text-slate-900 transition-colors">
               FAQ
             </a>
+            {onOpenAbout && (
+              <button
+                onClick={onOpenAbout}
+                className="hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                About Us
+              </button>
+            )}
             <button
               onClick={onOpenContact}
               className="hover:text-slate-900 transition-colors cursor-pointer"
@@ -76,8 +86,13 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
         </div>
 
         <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-400 gap-2">
-          <p>© {new Date().getFullYear()} TCGBuyer Ltd. All rights reserved.</p>
-          <p>Built for trading card shops, hobby stores, and gaming centers worldwide.</p>
+          <p>© {new Date().getFullYear()} TCGBuyer. All rights reserved.</p>
+          <p>
+            Built and founded by{' '}
+            <a href={OPERATOR_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-slate-600 hover:text-slate-900 underline-offset-2 hover:underline">
+              {OPERATOR_NAME}
+            </a>
+          </p>
         </div>
       </div>
     </footer>
