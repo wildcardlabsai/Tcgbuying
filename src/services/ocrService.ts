@@ -33,9 +33,16 @@ async function getWorker(): Promise<Worker> {
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Image decode timed out')), 15000);
     const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(img);
+    };
+    img.onerror = (e) => {
+      clearTimeout(timer);
+      reject(e);
+    };
     img.src = src;
   });
 }

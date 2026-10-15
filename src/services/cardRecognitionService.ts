@@ -196,6 +196,23 @@ export function recalculateCardValuation(
   };
 }
 
+/** Reject if `promise` does not settle within `ms`, so the UI can never wait forever. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
 /** Run `fn` over items with at most `limit` in flight; results keep input order. */
 export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(items.length);
@@ -217,12 +234,16 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (i
 export async function shrinkImage(dataUrl: string, maxSide = 1024, quality = 0.75): Promise<string> {
   if (!dataUrl.startsWith('data:image')) return dataUrl;
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = reject;
-      el.src = dataUrl;
-    });
+    const img = await withTimeout(
+      new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = dataUrl;
+      }),
+      15000,
+      'Image decode'
+    );
     const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(img.width * scale);
@@ -245,12 +266,26 @@ function recognitionErrorMessage(code?: string): string {
     case 'recognition_invalid_key':
     case 'recognition_unavailable':
       return 'Photo recognition is not available right now. You can still add your cards by typing a list or searching by name.';
+    case 'recognition_timeout':
+    case 'timeout':
+      return 'The photo reader is taking too long right now.';
     case 'ocr_failed':
       return 'We could not read the card name from that photo. Try a clearer photo of the front of the card, or add it by name.';
     case 'card_not_identified':
       return 'We could not read a card in that photo. Try a clearer, well-lit photo of the front, or add the card by name.';
     default:
       return 'We could not identify that card right now. Please try again, or add the card by name.';
+  }
+}
+
+/** fetch that gives up after `ms` (AbortSignal.timeout is missing on some older phones). */
+export async function fetchWithTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -268,8 +303,8 @@ async function recognizeByOcr(
   let text;
   try {
     const { readCardText } = await import('./ocrService');
-    // OCR needs more pixels than the recognition upload does.
-    text = await readCardText(await shrinkImage(rawBase64Data, 2200, 0.9));
+    // OCR needs more pixels than the recognition upload does. The first run downloads the reader, which can be slow on mobile.
+    text = await withTimeout(readCardText(await shrinkImage(rawBase64Data, 2200, 0.9)), 60000, 'Photo reader');
   } catch (err) {
     console.warn('OCR engine failed:', err);
     throw new OcrError('engine', 'engine');
@@ -278,11 +313,11 @@ async function recognizeByOcr(
 
   let res: Response;
   try {
-    res = await fetch('/api/identify-from-text', {
+    res = await fetchWithTimeout('/api/identify-from-text', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(text),
-    });
+    }, 30000);
   } catch {
     throw new OcrError('server', 'server');
   }
@@ -295,14 +330,17 @@ async function recognizeByOcr(
 export async function recognizeCardPhoto(
   rawBase64Data: string,
   fileName: string,
-  userHint?: string
+  userHint?: string,
+  onStage?: (text: string) => void
 ): Promise<RecognizedCardItem> {
+  onStage?.('Preparing your photo…');
   const base64Data = await shrinkImage(rawBase64Data);
+  onStage?.('Identifying the card…');
   const tempId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   let failureCode: string | undefined;
 
   try {
-    const res = await fetch('/api/recognize-card', {
+    const res = await fetchWithTimeout('/api/recognize-card', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -310,7 +348,7 @@ export async function recognizeCardPhoto(
         mimeType: 'image/jpeg',
         userHint,
       }),
-    });
+    }, 40000);
 
     if (res.ok) {
       const data = await res.json();
@@ -333,11 +371,13 @@ export async function recognizeCardPhoto(
     }
   } catch (err) {
     console.warn('API card recognition fallback:', err);
+    failureCode = (err as Error)?.name === 'AbortError' ? 'timeout' : 'no_response';
   }
 
   // AI unavailable (or could not read it): try the in-browser OCR backup, but not for the built-in samples.
   if (!userHint) {
     try {
+      onStage?.('Using the backup reader (the first time it needs to load)…');
       const ocr = await recognizeByOcr(rawBase64Data);
       return {
         tempId,

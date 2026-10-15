@@ -45,6 +45,7 @@ import {
   recalculateCardValuation,
   searchAlternativeCards,
   mapWithConcurrency,
+  withTimeout,
   RecognizedCardItem,
   MatchedCard,
 } from '../services/cardRecognitionService';
@@ -365,11 +366,18 @@ export default function CustomerDashboard({
 
     let done = 0;
     const results = await mapWithConcurrency(fileArray, 4, async (file) => {
+      const stage = (text: string) => setScanProgress((p) => ({ ...p, text: `${file.name}: ${text}` }));
       try {
+        stage('Reading your photo…');
         const base64 = await readFileAsBase64(file);
-        return isBinderMode
-          ? await scanMultiCardBinderPhoto(base64, file.name)
-          : [await recognizeCardPhoto(base64, file.name)];
+        // Never leave the screen spinning: give up on a photo after 2 minutes and say so.
+        return await withTimeout(
+          isBinderMode
+            ? scanMultiCardBinderPhoto(base64, file.name)
+            : recognizeCardPhoto(base64, file.name, undefined, stage).then((r) => [r]),
+          120000,
+          'Reading this photo'
+        );
       } catch (err) {
         alert(`${file.name}: ${(err as Error).message}`);
         return [] as RecognizedCardItem[];
@@ -393,11 +401,11 @@ export default function CustomerDashboard({
 
   // Convert file to base64
   const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        resolve((e.target?.result as string) || '');
-      };
+      reader.onload = (e) => resolve((e.target?.result as string) || '');
+      reader.onerror = () => reject(new Error('Your phone could not open that photo. If it is stored in iCloud, open it in Photos first so it downloads, then try again.'));
+      reader.onabort = () => reject(new Error('Reading the photo was cancelled.'));
       reader.readAsDataURL(file);
     });
   };

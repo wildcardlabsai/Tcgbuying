@@ -70071,8 +70071,10 @@ function toMatchedPayload(c) {
   };
 }
 var FAST_GEN_CONFIG = { temperature: 0, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } };
+var AI_TIMEOUT_MS = 12e3;
 function classifyAiError(err) {
   const msg = String(err?.message || "");
+  if (err?.name === "AbortError" || err?.name === "TimeoutError" || /aborted|timed out/i.test(msg)) return "timeout";
   const status = Number(err?.status ?? err?.code);
   if (status === 402 || status === 429 || /prepayment credits|RESOURCE_EXHAUSTED|quota/i.test(msg)) return "quota";
   if (status === 401 || status === 403 || /API key|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) return "invalid_key";
@@ -70088,13 +70090,19 @@ var AiUnavailableError = class extends Error {
 async function generateWithFallback(params) {
   const models = [.../* @__PURE__ */ new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite"])];
   let last = "unknown";
+  const deadline = Date.now() + 15e3;
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, void 0]) {
+      if (Date.now() > deadline) throw new AiUnavailableError(last === "unknown" ? "timeout" : last);
       try {
-        return await aiClient.models.generateContent({ model, contents: params.contents, config });
+        return await aiClient.models.generateContent({
+          model,
+          contents: params.contents,
+          config: { ...config || {}, abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS) }
+        });
       } catch (err) {
         last = classifyAiError(err);
-        if (last === "quota" || last === "invalid_key") throw new AiUnavailableError(last);
+        if (last === "quota" || last === "invalid_key" || last === "timeout") throw new AiUnavailableError(last);
         if (last === "model_unavailable") break;
       }
     }
