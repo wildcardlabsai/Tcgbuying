@@ -288,8 +288,9 @@ export async function recognizeCardPhoto(
           status: 'ready',
         };
       }
+      failureCode = 'bad_reply';
     } else {
-      failureCode = (await res.json().catch(() => null))?.error;
+      failureCode = (await res.json().catch(() => null))?.error || `http_${res.status}`;
     }
   } catch (err) {
     console.warn('API card recognition fallback:', err);
