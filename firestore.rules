@@ -2,71 +2,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Default deny catch-all
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Hardened Global Helpers
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isDealerOwner(dealerId) {
+    function isOwner(dealerId) {
       return isSignedIn() && request.auth.uid == dealerId;
     }
 
-    // Dealer Store Profiles
+    // Dealer store profiles. Public read (customers resolve a shop by slug);
+    // only the signed-in owner can create/update their own profile.
     match /dealers/{dealerId} {
-      allow read: if isValidId(dealerId);
-      allow create: if isValidId(dealerId) && isDealerOwner(dealerId) &&
-        incoming().name is string && incoming().name.size() <= 100 &&
-        incoming().slug is string && incoming().slug.size() <= 50;
-      allow update: if isValidId(dealerId) && isDealerOwner(dealerId);
+      allow read: if true;
+      allow create: if isOwner(dealerId) &&
+        request.resource.data.keys().hasOnly(['name', 'slug', 'ownerUid', 'createdAt']) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 100 &&
+        request.resource.data.slug is string && request.resource.data.slug.size() <= 50;
+      allow update: if isOwner(dealerId) &&
+        request.resource.data.ownerUid == resource.data.ownerUid &&
+        request.resource.data.name is string && request.resource.data.name.size() <= 100 &&
+        request.resource.data.slug is string && request.resource.data.slug.size() <= 50;
       allow delete: if false;
 
-      // Submissions Subcollection
+      // Customer submissions. The document id is the unguessable reference
+      // (e.g. TCG-K4M2XP7Q), so customers can `get` their own submission but
+      // only the dealer can list/query all of them.
       match /submissions/{submissionId} {
-        // Dealer and customers can read submissions
-        allow read: if isValidId(submissionId);
+        allow get: if true;
+        allow list: if isOwner(dealerId);
 
-        // Public intake: Any customer can submit cards to the store portal
-        allow create: if isValidId(submissionId) &&
-          incoming().dealerId == dealerId &&
-          incoming().reference is string && incoming().reference.size() <= 30 &&
-          incoming().customerName is string && incoming().customerName.size() <= 80 &&
-          incoming().customerEmail is string && incoming().customerEmail.size() <= 120 &&
-          incoming().cardCount is number && incoming().cardCount >= 1 &&
-          incoming().status in ['New', 'Review'];
+        // Public intake: any customer can submit to a shop's portal.
+        allow create: if submissionId.matches('^TCG-[A-Z0-9]{8}$') &&
+          exists(/databases/$(database)/documents/dealers/$(dealerId)) &&
+          request.resource.data.dealerId == dealerId &&
+          request.resource.data.reference == '#' + submissionId &&
+          request.resource.data.customerName is string && request.resource.data.customerName.size() <= 80 &&
+          request.resource.data.customerEmail is string && request.resource.data.customerEmail.size() <= 120 &&
+          request.resource.data.cardCount is number && request.resource.data.cardCount >= 1 &&
+          request.resource.data.status == 'New';
 
-        // Dealer updates offer, notes, cards status; or customer accepts/declines
-        allow update: if isValidId(submissionId);
+        // Dealer can change anything. A customer (unauthenticated) may only
+        // respond to an offer: accept, decline or counter.
+        allow update: if isOwner(dealerId) ||
+          (request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status', 'updatedAt', 'offeredAmount', 'dealerOfferNotes']) &&
+           request.resource.data.status in ['Accepted', 'Declined', 'Review'] &&
+           resource.data.status in ['Offer Sent', 'Review', 'New']);
 
-        allow delete: if isValidId(submissionId);
+        allow delete: if isOwner(dealerId);
       }
     }
 
-    // Market Prices (eBay last sold comps cache)
-    match /market_prices/{priceId} {
-      allow read: if isValidId(priceId);
-      allow write: if isSignedIn();
-    }
-
-    // Connection testing
-    match /test/{testId} {
-      allow read, write: if true;
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

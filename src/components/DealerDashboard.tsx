@@ -43,8 +43,7 @@ import {
   SubmittedCardItem,
 } from '../services/dealerSubmissionService';
 import { estimateCardPricing } from '../services/marketPricingService';
-import { auth, googleProvider } from '../firebase';
-import { signInWithPopup, signOut } from 'firebase/auth';
+import { signOutDealer } from '../services/authService';
 import PrintableManifestModal from './PrintableManifestModal';
 import ConditionGuideModal from './ConditionGuideModal';
 
@@ -52,12 +51,18 @@ interface DealerDashboardProps {
   onBackToHome: () => void;
   onOpenCustomerPortal: () => void;
   shopName?: string;
+  dealerId: string;
+  dealerSlug: string;
+  userEmail: string;
 }
 
 export default function DealerDashboard({
   onBackToHome,
   onOpenCustomerPortal,
-  shopName = 'The Card Vault',
+  shopName = 'My Card Shop',
+  dealerId,
+  dealerSlug,
+  userEmail,
 }: DealerDashboardProps) {
   const [activeTab, setActiveTab] = useState<'submissions' | 'card_vault' | 'comps' | 'settings'>('submissions');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'review' | 'sent' | 'completed'>('all');
@@ -81,9 +86,8 @@ export default function DealerDashboard({
   const [compGame, setCompGame] = useState('Pokémon');
   const [compResult, setCompResult] = useState(estimateCardPricing('Charizard Base Set', 'Pokémon', 'Raw NM'));
 
-  // Auth state
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
-  const [userEmail, setUserEmail] = useState('admin@thecardvault.co.uk');
+  const portalLink = `${window.location.origin}/?shop=${dealerSlug}`;
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Buylist settings
   const [cashMarginPercent, setCashMarginPercent] = useState(72);
@@ -91,7 +95,7 @@ export default function DealerDashboard({
 
   // Subscribe to real-time Firestore submissions
   useEffect(() => {
-    const unsubscribe = subscribeToSubmissions('the-card-vault', (list) => {
+    const unsubscribe = subscribeToSubmissions(dealerId, (list) => {
       setSubmissions(list);
       // If a submission is selected, update it with fresh Firestore state
       setSelectedSubmission((prev) => {
@@ -101,7 +105,7 @@ export default function DealerDashboard({
       });
     });
     return () => unsubscribe();
-  }, []);
+  }, [dealerId]);
 
   // Update offer input whenever selected submission changes
   useEffect(() => {
@@ -114,19 +118,6 @@ export default function DealerDashboard({
     }
   }, [selectedSubmission?.ref]);
 
-  // Auth handler
-  const handleGoogleLogin = async () => {
-    try {
-      const res = await signInWithPopup(auth, googleProvider);
-      if (res.user) {
-        setUserEmail(res.user.email || 'dealer@thecardvault.co.uk');
-        setIsLoggedIn(true);
-      }
-    } catch (err) {
-      setIsLoggedIn(true);
-    }
-  };
-
   // Status update in Firestore
   const handleUpdateStatus = async (
     newStatus: 'Review' | 'Offer Sent' | 'Accepted' | 'Completed' | 'Declined',
@@ -135,14 +126,15 @@ export default function DealerDashboard({
     if (!selectedSubmission) return;
     setIsUpdatingStatus(true);
 
-    const docId = selectedSubmission.id || 'seed-1047';
+    const docId = selectedSubmission.id!;
     const finalOffer = offerVal || customOfferInput;
 
     await updateSubmissionStatus(
       docId,
       newStatus,
       finalOffer,
-      dealerOfferNoteInput
+      dealerOfferNoteInput,
+      dealerId
     );
 
     setIsUpdatingStatus(false);
@@ -160,8 +152,8 @@ export default function DealerDashboard({
       dealerVerified: !item.dealerVerified,
     };
 
-    const docId = selectedSubmission.id || 'seed-1047';
-    await updateSubmissionCardItem(docId, updatedItems);
+    const docId = selectedSubmission.id!;
+    await updateSubmissionCardItem(docId, updatedItems, dealerId);
   };
 
   // Filtered submissions
@@ -224,27 +216,18 @@ export default function DealerDashboard({
             Website Home
           </button>
 
-          {isLoggedIn ? (
-            <div className="flex items-center gap-2 border-l border-slate-800 pl-3">
-              <span className="text-xs text-slate-300 hidden md:inline truncate max-w-[150px]">
-                {userEmail}
-              </span>
-              <button
-                onClick={() => setIsLoggedIn(false)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
-                title="Logout"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
+          <div className="flex items-center gap-2 border-l border-slate-800 pl-3">
+            <span className="text-xs text-slate-300 hidden md:inline truncate max-w-[150px]">
+              {userEmail}
+            </span>
             <button
-              onClick={handleGoogleLogin}
-              className="text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500"
+              onClick={() => signOutDealer()}
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+              title="Logout"
             >
-              Sign In
+              <LogOut className="w-3.5 h-3.5" />
             </button>
-          )}
+          </div>
         </div>
       </header>
 
@@ -888,6 +871,29 @@ export default function DealerDashboard({
                 <p className="text-xs text-slate-400 mt-1">
                   Adjust default cash and store credit buy percentages applied to eBay market averages.
                 </p>
+              </div>
+
+              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">Your customer buying portal link</label>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={portalLink}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white font-mono"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(portalLink);
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    }}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white"
+                  >
+                    {linkCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-500">Share this with collectors so their submissions land in your dashboard.</p>
               </div>
 
               <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">

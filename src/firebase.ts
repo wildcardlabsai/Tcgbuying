@@ -4,20 +4,8 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import {
-  getFirestore,
-  doc,
-  getDocFromServer,
-  collection,
-  query,
-  where,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  serverTimestamp,
-  getDocs,
-} from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -51,18 +39,4 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   };
   console.warn('Firestore Error: ', JSON.stringify(errInfo));
   return errInfo;
-}
-
-// Test connection on boot
-export async function testFirestoreConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log('Firebase connection verified.');
-    return true;
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client offline, utilizing cached state.');
-    }
-    return false;
-  }
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   X,
   Search,
@@ -23,7 +23,7 @@ import {
   ShieldCheck,
   RotateCcw,
 } from 'lucide-react';
-import { updateSubmissionStatus, LiveSubmission } from '../services/dealerSubmissionService';
+import { updateSubmissionStatus, getSubmissionByRef, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
 import ConditionGuideModal from './ConditionGuideModal';
 
@@ -32,13 +32,15 @@ interface SubmissionTrackerModalProps {
   onClose: () => void;
   initialRef?: string;
   submissions: LiveSubmission[];
+  dealerId: string | null;
 }
 
 export default function SubmissionTrackerModal({
   isOpen,
   onClose,
-  initialRef = '#TCG-1046',
+  initialRef = '',
   submissions,
+  dealerId,
 }: SubmissionTrackerModalProps) {
   const [searchRef, setSearchRef] = useState(initialRef);
   const [activeSub, setActiveSub] = useState<LiveSubmission | null>(null);
@@ -52,23 +54,45 @@ export default function SubmissionTrackerModal({
   const [counterNote, setCounterNote] = useState('');
   const [counterSubmitted, setCounterSubmitted] = useState(false);
 
-  // Search or set active submission
-  const currentSubmission =
-    activeSub ||
-    submissions.find((s) => s.ref.toLowerCase() === searchRef.trim().toLowerCase()) ||
-    submissions[0];
+  const [lookupError, setLookupError] = useState<string | null>(null);
+
+  const lookup = async (ref: string) => {
+    const wanted = ref.trim();
+    if (!wanted) return;
+    setLookupError(null);
+    const local = submissions.find((s) => s.ref.toLowerCase() === wanted.toLowerCase());
+    const found = local || (dealerId ? await getSubmissionByRef(dealerId, wanted) : null);
+    if (found) {
+      setActiveSub(found);
+    } else {
+      setActiveSub(null);
+      setLookupError('No submission found for that reference. Check it and try again.');
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && initialRef) {
+      setSearchRef(initialRef);
+      lookup(initialRef);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialRef, dealerId]);
+
+  const currentSubmission = activeSub;
 
   if (!isOpen) return null;
 
   const handleAccept = async (type: 'cash' | 'credit') => {
     if (currentSubmission) {
       await updateSubmissionStatus(
-        currentSubmission.id || '1046',
+        currentSubmission.id!,
         'Accepted',
         currentSubmission.offeredAmount || currentSubmission.estValue,
-        `Collector accepted official ${type.toUpperCase()} offer.`
+        `Collector accepted official ${type.toUpperCase()} offer.`,
+        dealerId!
       );
       setIsSuccess(true);
+      lookup(currentSubmission.ref);
     }
   };
 
@@ -77,11 +101,13 @@ export default function SubmissionTrackerModal({
     if (!currentSubmission || !counterAmount.trim()) return;
 
     await updateSubmissionStatus(
-      currentSubmission.id || '1046',
+      currentSubmission.id!,
       'Review',
       counterAmount,
-      `Collector Counter-Offer: ${counterAmount}. Note: "${counterNote}"`
+      `Collector Counter-Offer: ${counterAmount}. Note: "${counterNote}"`,
+      dealerId!
     );
+    lookup(currentSubmission.ref);
 
     setCounterSubmitted(true);
     setShowCounterForm(false);
@@ -91,11 +117,13 @@ export default function SubmissionTrackerModal({
     if (!currentSubmission) return;
     if (confirm('Are you sure you want to decline this offer? Your collection will be safely returned via fully insured tracked shipping.')) {
       await updateSubmissionStatus(
-        currentSubmission.id || '1046',
+        currentSubmission.id!,
         'Declined',
         undefined,
-        'Collector declined offer. Free insured return requested.'
+        'Collector declined offer. Free insured return requested.',
+        dealerId!
       );
+      lookup(currentSubmission.ref);
       alert('Offer declined. The shop has been notified to return your parcel at zero cost to you.');
     }
   };
@@ -139,22 +167,16 @@ export default function SubmissionTrackerModal({
                   value={searchRef}
                   onChange={(e) => {
                     setSearchRef(e.target.value);
-                    const found = submissions.find(
-                      (s) => s.ref.toLowerCase() === e.target.value.trim().toLowerCase()
-                    );
-                    if (found) setActiveSub(found);
                   }}
-                  placeholder="Enter Reference (e.g. #TCG-1046)..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') lookup(searchRef);
+                  }}
+                  placeholder="Enter Reference (e.g. #TCG-A1B2C3D4)..."
                   className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <button
-                onClick={() => {
-                  const found = submissions.find(
-                    (s) => s.ref.toLowerCase() === searchRef.trim().toLowerCase()
-                  );
-                  if (found) setActiveSub(found);
-                }}
+                onClick={() => lookup(searchRef)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg cursor-pointer shrink-0"
               >
                 Lookup
@@ -396,7 +418,7 @@ export default function SubmissionTrackerModal({
               </div>
             ) : (
               <div className="p-8 text-center text-slate-400 text-xs">
-                No submission found with that reference. Please check your tracking number.
+                {lookupError || 'Enter your submission reference above to see its status.'}
               </div>
             )}
           </div>

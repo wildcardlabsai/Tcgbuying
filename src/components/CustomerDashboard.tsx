@@ -56,6 +56,7 @@ interface CustomerDashboardProps {
   onOpenDealerDashboard: () => void;
   onTrackSubmission: (ref: string) => void;
   shopName?: string;
+  dealerId: string | null;
 }
 
 // Preset card samples for 1-click testing
@@ -113,6 +114,7 @@ export default function CustomerDashboard({
   onOpenDealerDashboard,
   onTrackSubmission,
   shopName = 'The Card Vault',
+  dealerId,
 }: CustomerDashboardProps) {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [intakeMode, setIntakeMode] = useState<'photos' | 'rapid_camera' | 'text_csv' | 'bulk_counter'>('photos');
@@ -557,6 +559,12 @@ export default function CustomerDashboard({
 
     const totalCount = cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares;
 
+    if (!dealerId) {
+      alert('This buying portal is not linked to a shop yet. Please use the link your shop gave you.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const result = await createCustomerSubmission({
       customerName: customerName.trim() || 'Valued Collector',
       customerEmail: customerEmail.trim() || 'collector@example.com',
@@ -571,7 +579,13 @@ export default function CustomerDashboard({
       notes: `${deliveryMethod === 'shipping' ? 'Prefers Insured Mail Kit' : 'Dropping off in-store'}. ${customerNotes}`,
       photos: cardItems.map((c) => c.userPhoto),
       items: submissionItems,
-    });
+    }, dealerId);
+
+    if (!result.success) {
+      setIsSubmitting(false);
+      alert('Sorry, we could not send your submission. Please check your connection and try again.');
+      return;
+    }
 
     setSubmittedRef(result.ref);
     setIsSubmitting(false);
@@ -603,7 +617,7 @@ export default function CustomerDashboard({
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => onTrackSubmission('#TCG-1047')}
+            onClick={() => onTrackSubmission(submittedRef || '')}
             className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 flex items-center gap-1.5 transition-colors"
           >
             <Search className="w-3.5 h-3.5 text-blue-400" />
@@ -1805,7 +1819,7 @@ export default function CustomerDashboard({
 
             <div>
               <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40">
-                Reference: {submittedRef || '#TCG-1048'}
+                Reference: {submittedRef || ''}
               </span>
               <h2 className="text-2xl sm:text-3xl font-black text-white mt-3">
                 Collection Submitted Successfully!
@@ -1856,7 +1870,7 @@ export default function CustomerDashboard({
 
               <button
                 type="button"
-                onClick={() => onTrackSubmission(submittedRef || '#TCG-1048')}
+                onClick={() => onTrackSubmission(submittedRef || '')}
                 className="w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs bg-blue-600 hover:bg-blue-500 text-white shadow-md flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -1958,7 +1972,7 @@ export default function CustomerDashboard({
         onClose={() => setIsPrintModalOpen(false)}
         shopName={shopName}
         submission={{
-          ref: submittedRef || '#TCG-1048',
+          ref: submittedRef || '',
           date: 'Today',
           collection: `TCG Collection (${cardItems.length} cards)`,
           cards: cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares,

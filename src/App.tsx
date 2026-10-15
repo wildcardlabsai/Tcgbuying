@@ -24,25 +24,68 @@ import {
   HowItWorksModal,
   ContactModal,
 } from './components/Modals';
-import { testFirestoreConnection } from './firebase';
+import DealerAuthScreen from './components/DealerAuthScreen';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './firebase';
 import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
+import { ensureDealerProfile, getDealerBySlug, DealerProfile } from './services/authService';
+
+const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'customer_portal' | 'dealer_dashboard'>(
+    shopSlugParam ? 'customer_portal' : 'landing'
+  );
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
-  const [trackerRef, setTrackerRef] = useState('#TCG-1047');
+  const [trackerRef, setTrackerRef] = useState('');
   const [submissionsList, setSubmissionsList] = useState<LiveSubmission[]>([]);
 
-  // Test Firestore connection on boot and sync live submissions
+  // Dealer auth state
+  const [authReady, setAuthReady] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+  const [dealer, setDealer] = useState<DealerProfile | null>(null);
+
+  // Shop whose public portal is being viewed (from ?shop=<slug>)
+  const [linkedShop, setLinkedShop] = useState<DealerProfile | null>(null);
+  const [shopLookupDone, setShopLookupDone] = useState(!shopSlugParam);
+
   useEffect(() => {
-    testFirestoreConnection();
-    const unsubscribe = subscribeToSubmissions('the-card-vault', (list) => {
-      setSubmissionsList(list);
+    return onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setDealer(null);
+        setUserEmail('');
+        setSubmissionsList([]);
+        setAuthReady(true);
+        return;
+      }
+      try {
+        setDealer(await ensureDealerProfile(user));
+        setUserEmail(user.email || '');
+      } catch {
+        setDealer(null);
+      }
+      setAuthReady(true);
     });
-    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!shopSlugParam) return;
+    getDealerBySlug(shopSlugParam).then((d) => {
+      setLinkedShop(d);
+      setShopLookupDone(true);
+    });
+  }, []);
+
+  // Live submissions for the signed-in dealer (also feeds the tracker for their own view)
+  useEffect(() => {
+    if (!dealer) return;
+    return subscribeToSubmissions(dealer.id, setSubmissionsList);
+  }, [dealer?.id]);
+
+  // Portal/tracker target: the linked shop, otherwise the signed-in dealer previewing their own portal
+  const portalDealer = linkedShop || dealer;
 
   const scrollToFeatures = () => {
     const el = document.getElementById('features');
@@ -53,22 +96,27 @@ export default function App() {
 
   // 1. DEDICATED PROPER CUSTOMER BUYING & CARD RECOGNITION PORTAL
   if (currentView === 'customer_portal') {
+    if (!shopLookupDone) {
+      return <div className="min-h-screen bg-slate-900 text-slate-300 flex items-center justify-center text-sm">Loading shop…</div>;
+    }
     return (
       <>
         <CustomerDashboard
+          dealerId={portalDealer?.id ?? null}
           onBackToHome={() => setCurrentView('landing')}
           onOpenDealerDashboard={() => setCurrentView('dealer_dashboard')}
           onTrackSubmission={(ref) => {
             setTrackerRef(ref);
             setIsTrackerOpen(true);
           }}
-          shopName="The Card Vault"
+          shopName={portalDealer?.name ?? (shopSlugParam ? 'Shop not found' : 'Demo Shop')}
         />
         <SubmissionTrackerModal
           isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}
           initialRef={trackerRef}
-          submissions={submissionsList}
+          submissions={linkedShop ? [] : submissionsList}
+          dealerId={portalDealer?.id ?? null}
         />
       </>
     );
@@ -76,18 +124,28 @@ export default function App() {
 
   // 2. DEDICATED PROPER DEALER & ADMIN COMMAND DASHBOARD
   if (currentView === 'dealer_dashboard') {
+    if (!authReady) {
+      return <div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>;
+    }
+    if (!dealer) {
+      return <DealerAuthScreen onBackToHome={() => setCurrentView('landing')} />;
+    }
     return (
       <>
         <DealerDashboard
           onBackToHome={() => setCurrentView('landing')}
           onOpenCustomerPortal={() => setCurrentView('customer_portal')}
-          shopName="The Card Vault"
+          shopName={dealer.name}
+          dealerId={dealer.id}
+          dealerSlug={dealer.slug}
+          userEmail={userEmail}
         />
         <SubmissionTrackerModal
           isOpen={isTrackerOpen}
           onClose={() => setIsTrackerOpen(false)}
           initialRef={trackerRef}
           submissions={submissionsList}
+          dealerId={dealer.id}
         />
       </>
     );
@@ -159,6 +217,7 @@ export default function App() {
         onClose={() => setIsTrackerOpen(false)}
         initialRef={trackerRef}
         submissions={submissionsList}
+        dealerId={dealer?.id ?? null}
       />
 
       {/* Product Walkthrough */}
