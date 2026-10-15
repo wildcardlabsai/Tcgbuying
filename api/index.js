@@ -70107,7 +70107,8 @@ function toMatchedPayload(c) {
   };
 }
 var FAST_GEN_CONFIG = { temperature: 0, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: 0 } };
-var AI_TIMEOUT_MS = 12e3;
+var AI_TIMEOUT_MS = 15e3;
+var lastGoodModel = "";
 function classifyAiError(err) {
   const msg = String(err?.message || "");
   if (err?.name === "AbortError" || err?.name === "TimeoutError" || /aborted|timed out/i.test(msg)) return "timeout";
@@ -70125,24 +70126,30 @@ var AiUnavailableError = class extends Error {
   }
 };
 async function generateWithFallback(params) {
-  const models = [.../* @__PURE__ */ new Set([GEMINI_MODEL, "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.5-flash-lite"])];
+  const models = [...new Set([lastGoodModel, process.env.GEMINI_MODEL || "", "gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"].filter(Boolean))];
   let last = "unknown";
   let lastDetail = "";
-  const deadline = Date.now() + 15e3;
+  const deadline = Date.now() + 4e4;
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, void 0]) {
       if (Date.now() > deadline) throw new AiUnavailableError(last === "unknown" ? "timeout" : last, lastDetail);
       try {
-        return await aiClient.models.generateContent({
+        const out = await aiClient.models.generateContent({
           model,
           contents: params.contents,
           config: { ...config || {}, abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS) }
         });
+        lastGoodModel = model;
+        return out;
       } catch (err) {
         last = classifyAiError(err);
         lastDetail = `${model}: ${String(err?.status ?? "")} ${String(err?.message ?? err)}`.replace(/\s+/g, " ").slice(0, 160);
         console.warn("Gemini call failed:", lastDetail);
-        if (last === "quota" || last === "invalid_key" || last === "timeout") throw new AiUnavailableError(last, lastDetail);
+        if (last === "quota" || last === "invalid_key") throw new AiUnavailableError(last, lastDetail);
+        if (last === "timeout") {
+          if (model === lastGoodModel) lastGoodModel = "";
+          break;
+        }
         if (last === "model_unavailable") break;
       }
     }

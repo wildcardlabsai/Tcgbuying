@@ -271,7 +271,7 @@ export async function recognizeCardPhoto(
         mimeType: 'image/jpeg',
         userHint,
       }),
-    }, 40000);
+    }, 50000);
 
     if (res.ok) {
       const data = await res.json();

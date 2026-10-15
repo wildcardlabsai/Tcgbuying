@@ -97,7 +97,8 @@ const FAST_GEN_CONFIG = { temperature: 0, responseMimeType: 'application/json', 
 type AiFailure = 'quota' | 'invalid_key' | 'model_unavailable' | 'timeout' | 'unknown';
 
 /** Longest we wait for one Gemini call; keeps a slow model from hanging the collector's screen. */
-const AI_TIMEOUT_MS = 12_000;
+const AI_TIMEOUT_MS = 15_000;
+let lastGoodModel = '';
 
 /** Map a Gemini SDK error to something the app can act on. */
 function classifyAiError(err: any): AiFailure {
@@ -121,24 +122,27 @@ class AiUnavailableError extends Error {
  * unavailable. Quota or key problems affect every model, so those stop immediately.
  */
 async function generateWithFallback(params: { contents: any }) {
-  const models = [...new Set([GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite'])];
+  const models = [...new Set([lastGoodModel, process.env.GEMINI_MODEL || '', 'gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'].filter(Boolean))];
   let last: AiFailure = 'unknown';
   let lastDetail = '';
-  const deadline = Date.now() + 15_000; // total budget across every attempt
+  const deadline = Date.now() + 40_000; // total budget across every attempt
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, undefined]) {
       if (Date.now() > deadline) throw new AiUnavailableError(last === 'unknown' ? 'timeout' : last, lastDetail);
       try {
-        return await aiClient!.models.generateContent({
+        const out = await aiClient!.models.generateContent({
           model,
           contents: params.contents,
           config: { ...(config || {}), abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS) },
         });
+        lastGoodModel = model;
+        return out;
       } catch (err) {
         last = classifyAiError(err);
         lastDetail = `${model}: ${String((err as any)?.status ?? '')} ${String((err as any)?.message ?? err)}`.replace(/\s+/g, ' ').slice(0, 160);
         console.warn('Gemini call failed:', lastDetail);
-        if (last === 'quota' || last === 'invalid_key' || last === 'timeout') throw new AiUnavailableError(last, lastDetail);
+        if (last === 'quota' || last === 'invalid_key') throw new AiUnavailableError(last, lastDetail);
+        if (last === 'timeout') { if (model === lastGoodModel) lastGoodModel = ''; break; }
         if (last === 'model_unavailable') break; // try the next model
       }
     }
