@@ -7,14 +7,60 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { IS_LOCAL } from '../config';
 import { readJson, writeJson } from './localStore';
+import { CurrencyCode, isCurrency, r2 } from './currency';
 
 export interface InfoBlock {
   title: string;
   body: string;
 }
 
+/** Per-card bulk rates, in the shop's `currency`. */
+export interface BulkRates {
+  commons: number;
+  holos: number;
+  ultraRares: number;
+  sealedPacks: number;
+}
+
+/** How much the shop pays: a percentage of estimated market value, plus flat bulk rates. */
+export interface PricingSettings {
+  cashPercent: number;
+  creditPercent: number;
+  /** The shop's own currency: default display currency and the currency bulk rates are entered in. */
+  currency: CurrencyCode;
+  bulk: BulkRates;
+}
+
+export const DEFAULT_PRICING: PricingSettings = {
+  cashPercent: 72,
+  creditPercent: 84,
+  currency: 'GBP',
+  bulk: { commons: 0.012, holos: 0.05, ultraRares: 0.5, sealedPacks: 3.2 },
+};
+
+const num = (v: unknown, min: number, max: number, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
+};
+
+export function sanitizePricing(raw: any): PricingSettings {
+  const d = DEFAULT_PRICING;
+  return {
+    cashPercent: num(raw?.cashPercent, 1, 100, d.cashPercent),
+    creditPercent: num(raw?.creditPercent, 1, 150, d.creditPercent),
+    currency: isCurrency(raw?.currency) ? raw.currency : d.currency,
+    bulk: {
+      commons: r2(num(raw?.bulk?.commons, 0, 1000, d.bulk.commons) * 1000) / 1000,
+      holos: r2(num(raw?.bulk?.holos, 0, 1000, d.bulk.holos) * 1000) / 1000,
+      ultraRares: r2(num(raw?.bulk?.ultraRares, 0, 10000, d.bulk.ultraRares) * 100) / 100,
+      sealedPacks: r2(num(raw?.bulk?.sealedPacks, 0, 10000, d.bulk.sealedPacks) * 100) / 100,
+    },
+  };
+}
+
 /** What a dealer customises about the page their customers see. */
 export interface Storefront {
+  pricing: PricingSettings;
   tagline: string;
   welcome: string;
   accent: string;
@@ -30,6 +76,7 @@ export const ACCENT_PRESETS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3
 export const MAX_INFO_BLOCKS = 6;
 
 export const EMPTY_STOREFRONT: Storefront = {
+  pricing: DEFAULT_PRICING,
   tagline: '',
   welcome: '',
   accent: ACCENT_PRESETS[0],
@@ -48,6 +95,7 @@ const clip = (v: unknown, n: number) => (typeof v === 'string' ? v.slice(0, n) :
 export function sanitizeStorefront(raw: any): Storefront {
   const logo = clip(raw?.logoUrl, 400_000);
   return {
+    pricing: sanitizePricing(raw?.pricing),
     tagline: clip(raw?.tagline, LIMITS.tagline),
     welcome: clip(raw?.welcome, LIMITS.welcome),
     accent: /^#[0-9a-fA-F]{6}$/.test(raw?.accent) ? raw.accent : EMPTY_STOREFRONT.accent,

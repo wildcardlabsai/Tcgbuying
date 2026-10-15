@@ -48,6 +48,9 @@ import { signOutDealer } from '../services/authService';
 import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
 import StorefrontEditor from './StorefrontEditor';
+import BuylistSettings from './BuylistSettings';
+import CurrencySelect from './CurrencySelect';
+import { useMoney } from '../CurrencyContext';
 import { Storefront } from '../services/storefrontService';
 import { IS_LOCAL } from '../config';
 import ConditionGuideModal from './ConditionGuideModal';
@@ -95,12 +98,9 @@ export default function DealerDashboard({
   const [compGame, setCompGame] = useState('Pokémon');
   const [compResult, setCompResult] = useState(estimateCardPricing('Charizard Base Set', 'Pokémon', 'Raw NM'));
 
+  const { fmt, symbol, offerText } = useMoney();
   const portalLink = `${window.location.origin}/?shop=${dealerSlug}`;
   const [linkCopied, setLinkCopied] = useState(false);
-
-  // Buylist settings
-  const [cashMarginPercent, setCashMarginPercent] = useState(72);
-  const [creditMarginPercent, setCreditMarginPercent] = useState(84);
 
   // Subscribe to real-time Firestore submissions
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function DealerDashboard({
     if (selectedSubmission) {
       setCustomOfferInput(
         selectedSubmission.offeredAmount ||
-        (selectedSubmission.totalCashOffer ? `£${selectedSubmission.totalCashOffer}` : selectedSubmission.estValue)
+        offerText(selectedSubmission)
       );
       setDealerOfferNoteInput(selectedSubmission.dealerOfferNotes || '');
     }
@@ -215,6 +215,8 @@ export default function DealerDashboard({
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>{IS_LOCAL ? "Local demo data" : "Live sync active"}</span>
           </div>
+
+          <CurrencySelect />
 
           <button
             onClick={onOpenCustomerPortal}
@@ -349,7 +351,7 @@ export default function DealerDashboard({
                 }`}
               >
                 <Settings className="w-4 h-4" />
-                <span>Buylist Margins</span>
+                <span>Pricing &amp; Bulk</span>
               </button>
             </nav>
           </div>
@@ -443,7 +445,7 @@ export default function DealerDashboard({
                           <div className="font-bold text-sm text-white truncate">{sub.collection}</div>
                           <div className="text-xs text-slate-400 flex items-center justify-between mt-1">
                             <span>{sub.collector}</span>
-                            <span className="font-mono font-bold text-emerald-400">{sub.estValue}</span>
+                            <span className="font-mono font-bold text-emerald-400">{sub.estValueGbp ? fmt(sub.estValueGbp) : sub.estValue}</span>
                           </div>
 
                           <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-2 border-t border-slate-800/60">
@@ -551,13 +553,13 @@ export default function DealerDashboard({
                         <div className="flex gap-3">
                           <div className="flex-1">
                             <label className="block text-[11px] text-slate-300 mb-1">
-                              Offer Amount (£):
+                              Offer Amount ({symbol}):
                             </label>
                             <input
                               type="text"
                               value={customOfferInput}
                               onChange={(e) => setCustomOfferInput(e.target.value)}
-                              placeholder="e.g. £1,150"
+                              placeholder={`e.g. ${symbol}1,150`}
                               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-bold text-emerald-400"
                             />
                           </div>
@@ -660,7 +662,7 @@ export default function DealerDashboard({
                                     </span>
                                     <span className="text-slate-400">|</span>
                                     <span className="text-emerald-400 font-bold">
-                                      Comp: £{card.marketPrice} (Buy: £{card.cashOffer})
+                                      Comp: {fmt(card.marketPrice)} (Buy: {fmt(card.cashOffer)})
                                     </span>
                                   </div>
                                   {card.dealerNote && (
@@ -766,7 +768,7 @@ export default function DealerDashboard({
 
                       <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-800">
                         <span className="text-amber-400 text-[11px] font-semibold">{card.condition}</span>
-                        <span className="text-emerald-400 font-bold">£{card.marketPrice}</span>
+                        <span className="text-emerald-400 font-bold">{fmt(card.marketPrice)}</span>
                       </div>
                     </div>
 
@@ -840,7 +842,7 @@ export default function DealerDashboard({
                     <div className="text-right">
                       <span className="text-[10px] text-slate-400 block">Estimated Value</span>
                       <span className="text-2xl font-black text-white">
-                        £{compResult.ebayLastSoldAvg}
+                        {fmt(compResult.ebayLastSoldAvg)}
                       </span>
                     </div>
                   </div>
@@ -851,7 +853,7 @@ export default function DealerDashboard({
                         Recommended Store Cash Offer (72%)
                       </span>
                       <span className="text-xl font-black text-emerald-400">
-                        £{compResult.storeCashOffer}
+                        {fmt(compResult.storeCashOffer)}
                       </span>
                     </div>
 
@@ -860,7 +862,7 @@ export default function DealerDashboard({
                         Recommended Store Credit (84%)
                       </span>
                       <span className="text-xl font-black text-amber-400">
-                        £{compResult.storeCreditOffer}
+                        {fmt(compResult.storeCreditOffer)}
                       </span>
                     </div>
                   </div>
@@ -870,15 +872,15 @@ export default function DealerDashboard({
                     <div className="grid grid-cols-3 gap-2">
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
                         <span className="text-[10px] text-slate-400 block">Low</span>
-                        <span className="font-bold text-slate-200">£{compResult.lowPrice}</span>
+                        <span className="font-bold text-slate-200">{fmt(compResult.lowPrice)}</span>
                       </div>
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
                         <span className="text-[10px] text-slate-400 block">Average</span>
-                        <span className="font-bold text-white">£{compResult.ebayLastSoldAvg}</span>
+                        <span className="font-bold text-white">{fmt(compResult.ebayLastSoldAvg)}</span>
                       </div>
                       <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs">
                         <span className="text-[10px] text-slate-400 block">High</span>
-                        <span className="font-bold text-emerald-300">£{compResult.highPrice}</span>
+                        <span className="font-bold text-emerald-300">{fmt(compResult.highPrice)}</span>
                       </div>
                     </div>
                     <p className="text-[10px] text-slate-500 mt-1">
@@ -901,78 +903,7 @@ export default function DealerDashboard({
           )}
 
           {activeTab === 'settings' && (
-            <div className="space-y-6 max-w-3xl">
-              <div className="border-b border-slate-800 pb-4">
-                <h2 className="text-xl font-black text-white">Store Buylist Margins & Configuration</h2>
-                <p className="text-xs text-slate-400 mt-1">
-                  Adjust default cash and store credit buy percentages applied to estimated market values.
-                </p>
-              </div>
-
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-2">
-                <label className="block text-xs font-semibold text-slate-300">Your customer buying portal link</label>
-                <div className="flex gap-2">
-                  <input
-                    readOnly
-                    value={portalLink}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white font-mono"
-                  />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard?.writeText(portalLink);
-                      setLinkCopied(true);
-                      setTimeout(() => setLinkCopied(false), 2000);
-                    }}
-                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white"
-                  >
-                    {linkCopied ? 'Copied!' : 'Copy'}
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500">Share this with collectors so their submissions land in your dashboard.</p>
-              </div>
-
-              <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Store Cash Offer Margin (% of estimated market value)
-                  </label>
-                  <input
-                    type="number"
-                    value={cashMarginPercent}
-                    onChange={(e) => setCashMarginPercent(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Default benchmark: 70% - 75%</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Store Credit Offer Margin (% of estimated market value)
-                  </label>
-                  <input
-                    type="number"
-                    value={creditMarginPercent}
-                    onChange={(e) => setCreditMarginPercent(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3.5 py-2 text-xs text-white"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Default benchmark: 80% - 85%</p>
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNotificationMsg('Store buylist margins saved successfully!');
-                      setTimeout(() => setNotificationMsg(null), 3000);
-                    }}
-                    className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white"
-                  >
-                    Save Buylist Margins
-                  </button>
-                </div>
-              </div>
-            </div>
+            <BuylistSettings dealerId={dealerId} portalLink={portalLink} onSaved={onStorefrontSaved} />
           )}
 
         </main>

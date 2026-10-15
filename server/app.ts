@@ -719,6 +719,33 @@ app.get('/api/search-cards', async (req: Request, res: Response) => {
   });
 });
 
+// GBP -> EUR/USD reference rates (ECB via frankfurter.dev), cached for 12h with static fallback.
+const FALLBACK_RATES = { EUR: 1.17, USD: 1.27 };
+let ratesCache: { at: number; rates: { EUR: number; USD: number } } | null = null;
+app.get('/api/rates', async (_req: Request, res: Response) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  if (ratesCache && Date.now() - ratesCache.at < 12 * 3600_000) {
+    res.json({ base: 'GBP', rates: ratesCache.rates, source: 'live' });
+    return;
+  }
+  try {
+    const r = await fetch('https://api.frankfurter.dev/v1/latest?base=GBP&symbols=EUR,USD', {
+      signal: AbortSignal.timeout(5000),
+    });
+    const j: any = r.ok ? await r.json() : null;
+    if (j?.rates?.EUR > 0 && j?.rates?.USD > 0) {
+      ratesCache = { at: Date.now(), rates: { EUR: j.rates.EUR, USD: j.rates.USD } };
+      res.json({ base: 'GBP', rates: ratesCache.rates, source: 'live' });
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  res.json({ base: 'GBP', rates: FALLBACK_RATES, source: 'fallback' });
+});
+
+app.use('/api', emailRouter);
+
 /**
  * Health check
  */

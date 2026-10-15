@@ -61,6 +61,8 @@ export interface LiveSubmission {
   collection: string;
   cards: number;
   estValue: string;
+  /** Estimated value in GBP (base currency). Format with useMoney().fmt. */
+  estValueGbp?: number;
   totalCashOffer?: number;
   totalCreditOffer?: number;
   status: 'Review' | 'Offer Sent' | 'New' | 'Completed' | 'Accepted' | 'Declined';
@@ -90,6 +92,7 @@ function mapSubmission(id: string, data: Record<string, any>): LiveSubmission {
     collection: data.collection || 'TCG Collection',
     cards: Number(data.cardCount || data.cards || (data.items ? data.items.length : 1)),
     estValue: data.estimatedValue ? `£${data.estimatedValue}` : data.estValue || '£0',
+    estValueGbp: Number(data.estimatedValue) || 0,
     totalCashOffer: data.totalCashOffer || Number(data.estimatedValue || 0),
     totalCreditOffer: data.totalCreditOffer || Math.round(Number(data.estimatedValue || 0) * 1.15),
     status: data.status || 'New',

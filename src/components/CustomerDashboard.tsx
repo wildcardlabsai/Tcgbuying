@@ -51,7 +51,10 @@ import {
 import { createCustomerSubmission, SubmittedCardItem, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
 import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
-import { Storefront } from '../services/storefrontService';
+import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
+import { useMoney } from '../CurrencyContext';
+import CurrencySelect from './CurrencySelect';
+import { r2 } from '../services/currency';
 import ConditionGuideModal from './ConditionGuideModal';
 
 interface CustomerDashboardProps {
@@ -62,6 +65,12 @@ interface CustomerDashboardProps {
   dealerId: string | null;
   storefront?: Storefront | null;
 }
+
+const BULK_ICON =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 88"><rect width="64" height="88" rx="6" fill="#1e293b"/><rect x="10" y="12" width="44" height="60" rx="4" fill="#334155" stroke="#64748b"/><text x="32" y="48" font-size="11" text-anchor="middle" fill="#cbd5e1" font-family="sans-serif">BULK</text></svg>'
+  );
 
 // Preset card samples for 1-click testing
 const SAMPLE_PRESETS = [
@@ -145,10 +154,10 @@ export default function CustomerDashboard({
 
   // Bulk Counter State (Tiered counts for commons/holos/etc.)
   const [bulkCounts, setBulkCounts] = useState({
-    commons: 300,
-    holos: 45,
-    ultraRares: 12,
-    sealedPacks: 2,
+    commons: 0,
+    holos: 0,
+    ultraRares: 0,
+    sealedPacks: 0,
   });
 
   // Alternative match search modal
@@ -179,21 +188,30 @@ export default function CustomerDashboard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedRef, setSubmittedRef] = useState<string | null>(null);
 
-  // Calculated collection totals (including bulk counts)
-  const bulkCashTotal =
-    bulkCounts.commons * 0.012 +
-    bulkCounts.holos * 0.05 +
-    bulkCounts.ultraRares * 0.50 +
-    bulkCounts.sealedPacks * 3.20;
-  const bulkCreditTotal = Math.round(bulkCashTotal * 1.15);
+  // Dealer pricing: percentage of market value for singles, flat per-card rates for bulk.
+  // All amounts below are GBP (base currency); display goes through fmt().
+  const pricing = storefront?.pricing ?? DEFAULT_PRICING;
+  const { fmt, toGbp, symbol } = useMoney();
+  const cashOf = (price: number) => r2((price * pricing.cashPercent) / 100);
+  const creditOf = (price: number) => r2((price * pricing.creditPercent) / 100);
+  const bulkRate = (k: keyof typeof pricing.bulk) => toGbp(pricing.bulk[k], pricing.currency);
+  const creditRatio = pricing.creditPercent / pricing.cashPercent;
+  const bulkLineCash = {
+    commons: r2(bulkCounts.commons * bulkRate('commons')),
+    holos: r2(bulkCounts.holos * bulkRate('holos')),
+    ultraRares: r2(bulkCounts.ultraRares * bulkRate('ultraRares')),
+    sealedPacks: r2(bulkCounts.sealedPacks * bulkRate('sealedPacks')),
+  };
+  const bulkCashTotal = r2(Object.values(bulkLineCash).reduce((a, b) => a + b, 0));
+  const bulkCreditTotal = r2(bulkCashTotal * creditRatio);
 
   const singlesMarketValue = cardItems.reduce((acc, c) => acc + c.matchedCard.marketPrice, 0);
-  const singlesCashOffer = cardItems.reduce((acc, c) => acc + c.matchedCard.storeCashOffer, 0);
-  const singlesCreditOffer = cardItems.reduce((acc, c) => acc + c.matchedCard.storeCreditOffer, 0);
+  const singlesCashOffer = r2(cardItems.reduce((acc, c) => acc + cashOf(c.matchedCard.marketPrice), 0));
+  const singlesCreditOffer = r2(cardItems.reduce((acc, c) => acc + creditOf(c.matchedCard.marketPrice), 0));
 
-  const totalMarketValue = singlesMarketValue + Math.round(bulkCashTotal * 1.4);
-  const totalCashOffer = singlesCashOffer + Math.round(bulkCashTotal);
-  const totalCreditOffer = singlesCreditOffer + bulkCreditTotal;
+  const totalMarketValue = r2(singlesMarketValue + bulkCashTotal / (pricing.cashPercent / 100));
+  const totalCashOffer = r2(singlesCashOffer + bulkCashTotal);
+  const totalCreditOffer = r2(singlesCreditOffer + bulkCreditTotal);
 
   // Handle camera activation for Rapid-Fire Camera
   useEffect(() => {
@@ -547,47 +565,39 @@ export default function CustomerDashboard({
       officialImageUrl: c.matchedCard.imageUrl,
       condition: c.selectedCondition,
       marketPrice: c.matchedCard.marketPrice,
-      cashOffer: c.matchedCard.storeCashOffer,
-      creditOffer: c.matchedCard.storeCreditOffer,
+      cashOffer: cashOf(c.matchedCard.marketPrice),
+      creditOffer: creditOf(c.matchedCard.marketPrice),
       confirmed: c.confirmed,
     }));
 
     // Add bulk counts as line items if present
-    if (bulkCounts.commons > 0) {
+    const bulkLines: { key: keyof typeof bulkCounts; name: string; set: string; rarity: string; cond: string }[] = [
+      { key: 'commons', name: 'Common / Uncommon Bulk', set: 'Bulk Stack', rarity: 'Common/Uncommon', cond: 'Raw Mixed' },
+      { key: 'holos', name: 'Holo / Reverse Holo Bulk', set: 'Bulk Holos', rarity: 'Holo Rare', cond: 'Raw NM/LP' },
+      { key: 'ultraRares', name: 'Ultra Rare / ex / V Bulk', set: 'Bulk Ultra Rares', rarity: 'Ultra Rare', cond: 'Raw NM/LP' },
+      { key: 'sealedPacks', name: 'Sealed Packs', set: 'Sealed', rarity: 'Sealed', cond: 'Sealed' },
+    ];
+    for (const line of bulkLines) {
+      const count = bulkCounts[line.key];
+      if (count <= 0) continue;
+      const cash = bulkLineCash[line.key];
       submissionItems.push({
-        id: `bulk-commons-${Date.now()}`,
-        name: `Common / Uncommon Bulk (${bulkCounts.commons} cards)`,
+        id: `bulk-${line.key}-${Date.now()}`,
+        name: `${line.name} (${count} ${line.key === 'sealedPacks' ? 'packs' : 'cards'})`,
         game: 'Mixed TCG',
-        setName: 'Bulk Stack',
-        cardNumber: `${bulkCounts.commons}x`,
-        rarity: 'Common/Uncommon',
-        userPhoto: 'https://images.pokemontcg.io/base1/4_hires.png',
-        condition: 'Raw Mixed',
-        marketPrice: Math.round(bulkCounts.commons * 0.02),
-        cashOffer: Math.round(bulkCounts.commons * 0.012),
-        creditOffer: Math.round(bulkCounts.commons * 0.015),
+        setName: line.set,
+        cardNumber: `${count}x`,
+        rarity: line.rarity,
+        userPhoto: BULK_ICON,
+        condition: line.cond,
+        marketPrice: r2(cash / (pricing.cashPercent / 100)),
+        cashOffer: cash,
+        creditOffer: r2(cash * creditRatio),
         confirmed: true,
       });
     }
 
-    if (bulkCounts.holos > 0) {
-      submissionItems.push({
-        id: `bulk-holos-${Date.now()}`,
-        name: `Holo / Reverse Holo Bulk (${bulkCounts.holos} cards)`,
-        game: 'Mixed TCG',
-        setName: 'Bulk Holos',
-        cardNumber: `${bulkCounts.holos}x`,
-        rarity: 'Holo Rare',
-        userPhoto: 'https://images.pokemontcg.io/swsh7/215_hires.png',
-        condition: 'Raw NM/LP',
-        marketPrice: Math.round(bulkCounts.holos * 0.08),
-        cashOffer: Math.round(bulkCounts.holos * 0.05),
-        creditOffer: Math.round(bulkCounts.holos * 0.06),
-        confirmed: true,
-      });
-    }
-
-    const totalCount = cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares;
+    const totalCount = cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares + bulkCounts.sealedPacks;
 
     if (!dealerId) {
       alert('This buying portal is not linked to a shop yet. Please use the link your shop gave you.');
@@ -650,6 +660,7 @@ export default function CustomerDashboard({
         </div>
 
         <div className="flex items-center gap-3">
+          <CurrencySelect />
           <button
             onClick={() => onTrackSubmission(submittedRef || '')}
             className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 flex items-center gap-1.5 transition-colors"
@@ -1063,7 +1074,7 @@ export default function CustomerDashboard({
                     <div className="bg-slate-900/90 rounded-xl p-3.5 border border-slate-800 flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-bold text-white">Common / Uncommon Stacks</h4>
-                        <p className="text-[11px] text-slate-400">Flat rate: £0.012 per card (NM/LP condition)</p>
+                        <p className="text-[11px] text-slate-400">Flat rate: {fmt(bulkRate('commons'))} per card (NM/LP condition)</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -1076,7 +1087,7 @@ export default function CustomerDashboard({
                           className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white text-right font-bold"
                         />
                         <span className="text-xs font-mono font-bold text-emerald-400 w-16 text-right">
-                          £{(bulkCounts.commons * 0.012).toFixed(2)}
+                          {fmt(bulkLineCash.commons)}
                         </span>
                       </div>
                     </div>
@@ -1085,7 +1096,7 @@ export default function CustomerDashboard({
                     <div className="bg-slate-900/90 rounded-xl p-3.5 border border-slate-800 flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-bold text-white">Holo Rares & Reverse Holos</h4>
-                        <p className="text-[11px] text-slate-400">Flat rate: £0.05 per card</p>
+                        <p className="text-[11px] text-slate-400">Flat rate: {fmt(bulkRate('holos'))} per card</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -1098,7 +1109,7 @@ export default function CustomerDashboard({
                           className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white text-right font-bold"
                         />
                         <span className="text-xs font-mono font-bold text-emerald-400 w-16 text-right">
-                          £{(bulkCounts.holos * 0.05).toFixed(2)}
+                          {fmt(bulkLineCash.holos)}
                         </span>
                       </div>
                     </div>
@@ -1107,7 +1118,7 @@ export default function CustomerDashboard({
                     <div className="bg-slate-900/90 rounded-xl p-3.5 border border-slate-800 flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-bold text-white">Ultra Rares (V / EX / GX)</h4>
-                        <p className="text-[11px] text-slate-400">Flat rate: £0.50 per card</p>
+                        <p className="text-[11px] text-slate-400">Flat rate: {fmt(bulkRate('ultraRares'))} per card</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -1120,7 +1131,7 @@ export default function CustomerDashboard({
                           className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white text-right font-bold"
                         />
                         <span className="text-xs font-mono font-bold text-emerald-400 w-16 text-right">
-                          £{(bulkCounts.ultraRares * 0.50).toFixed(2)}
+                          {fmt(bulkLineCash.ultraRares)}
                         </span>
                       </div>
                     </div>
@@ -1129,7 +1140,7 @@ export default function CustomerDashboard({
                     <div className="bg-slate-900/90 rounded-xl p-3.5 border border-slate-800 flex items-center justify-between">
                       <div>
                         <h4 className="text-xs font-bold text-white">Sealed Booster Packs</h4>
-                        <p className="text-[11px] text-slate-400">Standard set: £3.20 per pack</p>
+                        <p className="text-[11px] text-slate-400">Shop rate: {fmt(bulkRate('sealedPacks'))} per pack</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -1142,7 +1153,7 @@ export default function CustomerDashboard({
                           className="w-24 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white text-right font-bold"
                         />
                         <span className="text-xs font-mono font-bold text-emerald-400 w-16 text-right">
-                          £{(bulkCounts.sealedPacks * 3.20).toFixed(2)}
+                          {fmt(bulkLineCash.sealedPacks)}
                         </span>
                       </div>
                     </div>
@@ -1153,7 +1164,7 @@ export default function CustomerDashboard({
                     <div>
                       <span className="text-xs text-slate-400 block">Total Bulk Cash Payout:</span>
                       <span className="text-xl font-black text-emerald-400">
-                        £{bulkCashTotal.toFixed(2)}
+                        {fmt(bulkCashTotal)}
                       </span>
                     </div>
 
@@ -1467,7 +1478,7 @@ export default function CustomerDashboard({
                     Instant Cash Offer
                   </span>
                   <p className="text-2xl font-black text-emerald-400 mt-0.5">
-                    £{totalCashOffer.toLocaleString()}
+                    {fmt(totalCashOffer)}
                   </p>
                   <p className="text-[10px] text-slate-300">Bank Transfer or PayPal (72% comp)</p>
                 </div>
@@ -1478,7 +1489,7 @@ export default function CustomerDashboard({
                     Store Credit Offer
                   </span>
                   <p className="text-2xl font-black text-amber-400 mt-0.5">
-                    £{totalCreditOffer.toLocaleString()}
+                    {fmt(totalCreditOffer)}
                   </p>
                   <p className="text-[10px] text-slate-300">+12% Bonus Store Credit (84% comp)</p>
                 </div>
@@ -1508,7 +1519,7 @@ export default function CustomerDashboard({
                         </p>
                         <div className="mt-1 flex items-center gap-2">
                           <span className="text-xs font-semibold text-blue-300">
-                            Est. market value: £{item.matchedCard.marketPrice}
+                            Est. market value: {fmt(item.matchedCard.marketPrice)}
                           </span>
                         </div>
                       </div>
@@ -1539,10 +1550,10 @@ export default function CustomerDashboard({
                       {/* Cash vs Credit offer breakdown for this card */}
                       <div className="bg-slate-900/90 border border-slate-700/80 rounded-lg px-4 py-2 text-right">
                         <div className="text-xs font-bold text-emerald-400">
-                          Cash: £{item.matchedCard.storeCashOffer}
+                          Cash: {fmt(cashOf(item.matchedCard.marketPrice))}
                         </div>
                         <div className="text-[11px] text-amber-300">
-                          Credit: £{item.matchedCard.storeCreditOffer}
+                          Credit: {fmt(creditOf(item.matchedCard.marketPrice))}
                         </div>
                       </div>
                     </div>
@@ -1705,7 +1716,7 @@ export default function CustomerDashboard({
                         <DollarSign className="w-3.5 h-3.5" /> Direct Cash Payout
                       </span>
                       <div className="text-xl font-black text-white mt-1">
-                        £{totalCashOffer.toLocaleString()}
+                        {fmt(totalCashOffer)}
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">Bank transfer or PayPal</p>
                     </button>
@@ -1723,7 +1734,7 @@ export default function CustomerDashboard({
                         <Sparkles className="w-3.5 h-3.5" /> +12% Store Credit
                       </span>
                       <div className="text-xl font-black text-white mt-1">
-                        £{totalCreditOffer.toLocaleString()}
+                        {fmt(totalCreditOffer)}
                       </div>
                       <p className="text-[10px] text-slate-400 mt-1">Digital voucher for sealed & singles</p>
                     </button>
@@ -1779,16 +1790,12 @@ export default function CustomerDashboard({
                   </div>
                   <div className="flex justify-between text-xs text-slate-300 mb-2">
                     <span>Est. Market Comp Value:</span>
-                    <span className="font-bold text-white">£{totalMarketValue.toLocaleString()}</span>
+                    <span className="font-bold text-white">{fmt(totalMarketValue)}</span>
                   </div>
                   <div className="flex justify-between text-sm font-black text-white pt-2 border-t border-slate-700">
                     <span>Selected Estimated Offer:</span>
                     <span className={preferredPayout === 'credit' ? 'text-amber-400' : 'text-emerald-400'}>
-                      £
-                      {(preferredPayout === 'credit'
-                        ? totalCreditOffer
-                        : totalCashOffer
-                      ).toLocaleString()}
+                      {fmt(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer)}
                     </span>
                   </div>
 
@@ -1855,7 +1862,7 @@ export default function CustomerDashboard({
               <div className="flex justify-between">
                 <span className="text-slate-400">Preferred Offer:</span>
                 <span className="text-emerald-400 font-bold">
-                  £{(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer).toLocaleString()}{' '}
+                  {fmt(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer)}{' '}
                   ({preferredPayout.toUpperCase()})
                 </span>
               </div>
@@ -1974,7 +1981,7 @@ export default function CustomerDashboard({
                       {card.game} • {card.setName} • #{card.cardNumber}
                     </p>
                     <p className="text-[10px] text-emerald-400 font-semibold">
-                      {card.marketPrice > 0 ? `Est. £${card.marketPrice} (Cash £${card.storeCashOffer})` : 'No price available'}
+                      {card.marketPrice > 0 ? `Est. ${fmt(card.marketPrice)} (Cash ${fmt(cashOf(card.marketPrice))})` : 'No price available'}
                     </p>
                   </div>
                   <span className="text-xs text-blue-400 font-semibold">Select</span>
@@ -2019,7 +2026,7 @@ export default function CustomerDashboard({
           date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
           collection: `TCG Collection (${cardItems.length} cards)`,
           cards: cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares,
-          estValue: `£${(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer).toLocaleString()}`,
+          estValue: fmt(preferredPayout === 'credit' ? totalCreditOffer : totalCashOffer),
           totalCashOffer,
           totalCreditOffer,
           status: 'New',
@@ -2039,8 +2046,8 @@ export default function CustomerDashboard({
             officialImageUrl: c.matchedCard.imageUrl,
             condition: c.selectedCondition,
             marketPrice: c.matchedCard.marketPrice,
-            cashOffer: c.matchedCard.storeCashOffer,
-            creditOffer: c.matchedCard.storeCreditOffer,
+            cashOffer: cashOf(c.matchedCard.marketPrice),
+            creditOffer: creditOf(c.matchedCard.marketPrice),
             confirmed: c.confirmed,
           })),
         }}

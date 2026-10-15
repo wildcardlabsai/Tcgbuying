@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { updateSubmissionStatus, getSubmissionByRef, LiveSubmission } from '../services/dealerSubmissionService';
 import PrintableManifestModal from './PrintableManifestModal';
+import { useMoney } from '../CurrencyContext';
+import CurrencySelect from './CurrencySelect';
 import { Storefront } from '../services/storefrontService';
 import ConditionGuideModal from './ConditionGuideModal';
 
@@ -47,6 +49,7 @@ export default function SubmissionTrackerModal({
   shopName,
   storefront,
 }: SubmissionTrackerModalProps) {
+  const { offerText, symbol } = useMoney();
   const [searchRef, setSearchRef] = useState(initialRef);
   const [activeSub, setActiveSub] = useState<LiveSubmission | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
@@ -92,7 +95,7 @@ export default function SubmissionTrackerModal({
       await updateSubmissionStatus(
         currentSubmission.id!,
         'Accepted',
-        currentSubmission.offeredAmount || currentSubmission.estValue,
+        offerText(currentSubmission),
         `Collector accepted official ${type.toUpperCase()} offer.`,
         dealerId!
       );
@@ -146,6 +149,7 @@ export default function SubmissionTrackerModal({
             </div>
             
             <div className="flex items-center gap-2">
+              <CurrencySelect />
               <button
                 onClick={() => setShowConditionGuide(true)}
                 className="text-xs text-slate-300 hover:text-white px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 flex items-center gap-1 cursor-pointer"
@@ -293,7 +297,7 @@ export default function SubmissionTrackerModal({
                           Official Store Offer
                         </span>
                         <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-0.5">
-                          {currentSubmission.offeredAmount || currentSubmission.estValue}
+                          {offerText(currentSubmission)}
                         </div>
                       </div>
                       <div className="text-right">
@@ -334,7 +338,7 @@ export default function SubmissionTrackerModal({
                             className="py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <ThumbsUp className="w-3.5 h-3.5" />
-                            <span>Accept Cash ({currentSubmission.offeredAmount || currentSubmission.estValue})</span>
+                            <span>Accept Cash ({offerText(currentSubmission)})</span>
                           </button>
                           <button
                             onClick={() => handleAccept('credit')}
@@ -377,7 +381,7 @@ export default function SubmissionTrackerModal({
                                 required
                                 value={counterAmount}
                                 onChange={(e) => setCounterAmount(e.target.value)}
-                                placeholder="e.g. £1,200"
+                                placeholder={`e.g. ${symbol}1,200`}
                                 className="w-28 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold"
                               />
                               <input

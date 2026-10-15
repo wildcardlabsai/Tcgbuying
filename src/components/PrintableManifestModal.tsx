@@ -9,6 +9,7 @@ import QRCode from 'qrcode';
 import { X, Printer, Package, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import Logo from './Logo';
 import { LiveSubmission } from '../services/dealerSubmissionService';
+import { useMoney } from '../CurrencyContext';
 import { Storefront } from '../services/storefrontService';
 
 interface PrintableManifestModalProps {
@@ -26,6 +27,7 @@ export default function PrintableManifestModal({
   shopName = 'The Card Vault',
   storefront,
 }: PrintableManifestModalProps) {
+  const { fmt, offerText } = useMoney();
   const [qr, setQr] = useState('');
   const ref = submission?.ref;
 
@@ -41,7 +43,7 @@ export default function PrintableManifestModal({
   };
 
   const totalMarket = (submission.items || []).reduce((acc, c) => acc + (c.marketPrice || 0), 0);
-  const totalOffer = submission.offeredAmount || (submission.totalCashOffer ? `£${submission.totalCashOffer}` : submission.estValue);
+  const totalOffer = offerText(submission);
 
   // Rendered into <body> so print CSS can hide the rest of the app and print only this document.
   return createPortal(
@@ -199,10 +201,10 @@ export default function PrintableManifestModal({
                         {card.condition}
                       </td>
                       <td className="py-2.5 px-3 text-right text-slate-500">
-                        £{card.marketPrice || 0}
+                        {fmt(card.marketPrice || 0)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-bold text-slate-900">
-                        £{card.cashOffer || card.marketPrice || 0}
+                        {fmt(card.cashOffer || card.marketPrice || 0)}
                       </td>
                     </tr>
                   ))}

@@ -24,6 +24,7 @@ import {
   HowItWorksModal,
   ContactModal,
 } from './components/Modals';
+import { CurrencyProvider, useMoney } from './CurrencyContext';
 import LegalModal, { LegalDoc } from './components/LegalModal';
 import DealerAuthScreen from './components/DealerAuthScreen';
 import { subscribeToSubmissions, LiveSubmission } from './services/dealerSubmissionService';
@@ -35,9 +36,11 @@ const shopSlugParam = new URLSearchParams(window.location.search).get('shop');
 
 export default function App() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>}>
-      <AppInner />
-    </Suspense>
+    <CurrencyProvider>
+      <Suspense fallback={<div className="min-h-screen bg-slate-950 text-slate-300 flex items-center justify-center text-sm">Loading…</div>}>
+        <AppInner />
+      </Suspense>
+    </CurrencyProvider>
   );
 }
 
@@ -98,6 +101,13 @@ function AppInner() {
     if (!activeDealer) return;
     return subscribeToSubmissions(activeDealer.id, setSubmissionsList);
   }, [activeDealer?.id]);
+
+  // The shop's currency is the default for whoever is viewing (a viewer's own choice still wins)
+  const { setDefaultCurrency } = useMoney();
+  const shopStorefront = currentView === 'dealer_dashboard' ? ownStorefront : linkedShop ? linkedShop.storefront : ownStorefront;
+  useEffect(() => {
+    if (shopStorefront) setDefaultCurrency(shopStorefront.pricing.currency);
+  }, [shopStorefront?.pricing.currency, setDefaultCurrency]);
 
   // Portal/tracker target: the linked shop, otherwise the signed-in dealer previewing their own portal
   const portalDealer = linkedShop || activeDealer;
