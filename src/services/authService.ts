@@ -188,7 +188,7 @@ function slugify(name: string): string {
 }
 
 export async function getDealerBySlug(slug: string): Promise<DealerProfile | null> {
-  if (LOGIN_BYPASS && slug === DEMO_DEALER.slug) return { ...DEMO_DEALER, storefront: await getStorefront(DEMO_DEALER.id) };
+  if (slug === DEMO_DEALER.slug) return { ...DEMO_DEALER, storefront: await getStorefront(DEMO_DEALER.id) };
   if (IS_LOCAL) {
     const d = readJson<LocalDealer[]>(DEALERS_KEY, []).find((x) => x.slug === slug);
     return d ? { id: d.id, name: d.name, slug: d.slug, storefront: await getStorefront(d.id) } : null;

@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import Logo from './Logo';
-import { ArrowRight, Menu, X, ShieldCheck, UserCheck } from 'lucide-react';
+import { ArrowRight, Menu, X } from 'lucide-react';
 
 interface NavbarProps {
   onGetStarted: () => void;
@@ -38,43 +38,10 @@ export default function Navbar({
 
           {/* Zone 2: clean single-line nav links */}
           <nav className="hidden md:flex items-center gap-6 lg:gap-8 text-[14px] font-medium text-slate-600">
-            <a
-              href="#how-it-works"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap"
-            >
-              How It Works
-            </a>
-            <button
-              onClick={onOpenDealerPortal}
-              className="hover:text-blue-600 font-semibold transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1"
-            >
-              <span>Dealer Workspace</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            </button>
-            <button
-              onClick={onOpenCustomerPortal}
-              className="hover:text-slate-900 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              Customer Buying Page
-            </button>
-            <button
-              onClick={onOpenTracker}
-              className="hover:text-slate-900 transition-colors whitespace-nowrap cursor-pointer text-slate-500 hover:text-slate-800"
-            >
-              Track Submission
-            </button>
-            <a
-              href="#features"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap"
-            >
-              Features
-            </a>
-            <a
-              href="#faq"
-              className="hover:text-slate-900 transition-colors whitespace-nowrap"
-            >
-              FAQ
-            </a>
+            <a href="#how-it-works" className="hover:text-slate-900 transition-colors whitespace-nowrap">How It Works</a>
+            <a href="#features" className="hover:text-slate-900 transition-colors whitespace-nowrap">Features</a>
+            <a href="#pricing" className="hover:text-slate-900 transition-colors whitespace-nowrap">Pricing</a>
+            <a href="#faq" className="hover:text-slate-900 transition-colors whitespace-nowrap">FAQ</a>
           </nav>
 
           {/* Zone 3: 1 primary action button */}
@@ -111,48 +78,19 @@ export default function Navbar({
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-slate-200 bg-white px-4 pt-3 pb-6 space-y-4 shadow-lg animate-in slide-in-from-top-2">
           <nav className="flex flex-col space-y-3 text-base font-medium text-slate-700">
+            <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1 hover:text-blue-600">How It Works</a>
+            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1 hover:text-blue-600">Features</a>
+            <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1 hover:text-blue-600">Pricing</a>
+            <a href="#faq" onClick={() => setMobileMenuOpen(false)} className="px-2 py-1 hover:text-blue-600">FAQ</a>
             <button
               onClick={() => {
                 setMobileMenuOpen(false);
                 onOpenDealerPortal && onOpenDealerPortal();
               }}
-              className="text-left px-2 py-1 font-semibold text-blue-600 flex items-center justify-between"
+              className="text-left px-2 py-1 font-semibold text-blue-600"
             >
-              <span>Dealer Workspace</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold">
-                Live DB
-              </span>
+              Dealer Login
             </button>
-            <button
-              onClick={() => {
-                setMobileMenuOpen(false);
-                onOpenCustomerPortal && onOpenCustomerPortal();
-              }}
-              className="text-left px-2 py-1 text-slate-800 hover:text-blue-600"
-            >
-              Customer Buying Page
-            </button>
-            <a
-              href="#how-it-works"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-2 py-1 hover:text-blue-600 transition-colors"
-            >
-              How It Works
-            </a>
-            <a
-              href="#features"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-2 py-1 hover:text-blue-600 transition-colors"
-            >
-              Features
-            </a>
-            <a
-              href="#faq"
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-2 py-1 hover:text-blue-600 transition-colors"
-            >
-              FAQ
-            </a>
           </nav>
           <div className="pt-2 border-t border-slate-100">
             <button

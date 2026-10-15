@@ -8,10 +8,10 @@ import { ArrowRight } from 'lucide-react';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import TrustBar from './components/TrustBar';
-import SimplifiedProcessSection from './components/SimplifiedProcessSection';
-import DashboardWorkflowSection from './components/DashboardWorkflowSection';
-import BrandedPortalSection from './components/BrandedPortalSection';
-import StepsWorkflowSection from './components/StepsWorkflowSection';
+import FeaturesSection from './components/FeaturesSection';
+import SetupSteps from './components/SetupSteps';
+import CollectorSideSection from './components/CollectorSideSection';
+import PricingSection from './components/PricingSection';
 import CtaBanner from './components/CtaBanner';
 import Footer from './components/Footer';
 import FaqSection from './components/FaqSection';
@@ -20,11 +20,7 @@ import RoiCalculatorSection from './components/RoiCalculatorSection';
 const CustomerDashboard = lazy(() => import('./components/CustomerDashboard'));
 const DealerDashboard = lazy(() => import('./components/DealerDashboard'));
 import SubmissionTrackerModal from './components/SubmissionTrackerModal';
-import {
-  GetStartedModal,
-  HowItWorksModal,
-  ContactModal,
-} from './components/Modals';
+import { ContactModal } from './components/Modals';
 import { CurrencyProvider, useMoney } from './CurrencyContext';
 import { LegalProvider, useLegal } from './LegalContext';
 import DealerAuthScreen from './components/DealerAuthScreen';
@@ -55,7 +51,6 @@ function AppInner() {
   const [currentView, setCurrentView] = useState<View>(shopSlugParam ? 'customer_portal' : 'landing');
   const [authReturnView, setAuthReturnView] = useState<View>('customer_account');
   const [accountTrack, setAccountTrack] = useState<{ dealerId: string; shopName: string } | null>(null);
-  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false);
   const [isContactOpen, setIsContactOpen] = useState(false);
   const [isTrackerOpen, setIsTrackerOpen] = useState(false);
   const openLegal = useLegal();
@@ -133,13 +128,6 @@ function AppInner() {
   // Portal/tracker target: the linked shop, otherwise the signed-in dealer previewing their own portal
   const portalDealer = linkedShop || activeDealer;
   const portalStorefront = linkedShop ? (linkedShop.storefront ?? null) : ownStorefront;
-
-  const scrollToFeatures = () => {
-    const el = document.getElementById('features');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
 
   // 1. DEDICATED PROPER CUSTOMER BUYING & CARD RECOGNITION PORTAL
   if (currentView === 'customer_portal') {
@@ -272,51 +260,20 @@ function AppInner() {
       {/* Top Navbar */}
       <Navbar
         onGetStarted={() => setCurrentView('dealer_signup')}
-        onExploreFeatures={scrollToFeatures}
         onOpenDealerPortal={() => setCurrentView('dealer_dashboard')}
-        onOpenCustomerPortal={() => setCurrentView('customer_portal')}
-        onOpenTracker={() => setIsTrackerOpen(true)}
       />
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <HeroSection
-          onGetStarted={() => setCurrentView('dealer_signup')}
-          onSeeHowItWorks={() => setIsHowItWorksOpen(true)}
-          onOpenSubmissionDemo={() => setCurrentView('dealer_dashboard')}
-        />
-
-        {/* Live Buylist Ticker Marquee */}
+        <HeroSection onGetStarted={() => setCurrentView('dealer_signup')} />
         <BuylistTicker />
-
-        {/* Trust Badges Bar */}
         <TrustBar />
-
-        {/* The buying process, simplified */}
-        <SimplifiedProcessSection />
-
-        {/* Inside TCGBuyer: One buying workflow */}
-        <DashboardWorkflowSection
-          onSelectSubmission={() => setCurrentView('dealer_dashboard')}
-        />
-
-        {/* Made for your shop: Your buying process. Your brand. Your customers. */}
-        <BrandedPortalSection onGetStarted={() => setCurrentView('dealer_signup')} />
-
-        {/* A clearer way to buy cards: 3 Step Cards */}
-        <StepsWorkflowSection />
-
-        {/* Store ROI & Staff Time Saved Calculator */}
+        <FeaturesSection />
+        <SetupSteps />
+        <CollectorSideSection />
         <RoiCalculatorSection onGetStarted={() => setCurrentView('dealer_signup')} />
-
-        {/* Dark Navy CTA Banner */}
-        <CtaBanner
-          onGetStarted={() => setCurrentView('dealer_signup')}
-          onExploreFeatures={scrollToFeatures}
-        />
-
-        {/* Frequently Asked Questions */}
+        <PricingSection onGetStarted={() => setCurrentView('dealer_signup')} />
         <FaqSection />
+        <CtaBanner onGetStarted={() => setCurrentView('dealer_signup')} />
       </main>
 
       {/* Footer */}
@@ -326,6 +283,7 @@ function AppInner() {
         onOpenTerms={() => openLegal('terms')}
         onOpenPrivacy={() => openLegal('privacy')}
         onOpenAbout={() => openLegal('about')}
+        onOpenTracker={() => setIsTrackerOpen(true)}
       />
 
       {/* Spacer so the sticky bar never covers the footer (mobile only) */}
@@ -350,14 +308,6 @@ function AppInner() {
         submissions={submissionsList}
         dealerId={activeDealer?.id ?? null}
       />
-
-      {/* Product Walkthrough */}
-      <HowItWorksModal
-        isOpen={isHowItWorksOpen}
-        onClose={() => setIsHowItWorksOpen(false)}
-        onGetStarted={() => setCurrentView('dealer_signup')}
-      />
-
 
       {/* Contact Support */}
       <ContactModal

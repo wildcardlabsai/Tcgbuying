@@ -6,15 +6,15 @@
 import { Flame, TrendingUp } from 'lucide-react';
 
 export default function BuylistTicker() {
+  // Illustrative offers at 72% cash / 84% credit; a real shop sets its own rates.
   const tickerItems = [
-    { name: '1999 Base Set Charizard #4/102', rate: '72% of market value', payout: '£205 Cash / £240 Credit', game: 'Pokémon' },
-    { name: 'Umbreon VMAX Alt Art #215/203', rate: 'High Demand', payout: '£490 Cash / £575 Credit', game: 'Pokémon' },
-    { name: 'Black Lotus Unlimited Edition', rate: 'Vintage Verified', payout: '£6,120 Wire / £7,140 Credit', game: 'MTG' },
-    { name: 'Pikachu Illustrator CoroCoro Promo', rate: 'PSA 9/10 Premium', payout: 'Instant Bank Wire', game: 'Pokémon' },
-    { name: 'Blue-Eyes White Dragon 1st LOB-001', rate: 'Clean Holo Foil', payout: '£172 Cash / £202 Credit', game: 'Yu-Gi-Oh!' },
-    { name: 'Bulk Modern Holos & Reverse Holos', rate: 'Any Quantity', payout: '5p / card flat rate', game: 'Bulk' },
-    { name: 'Bulk Common / Uncommon Stacks', rate: 'Sorted / Unsorted', payout: '1.2p / card', game: 'Bulk' },
-    { name: 'Double Masters Mana Crypt', rate: 'Borderless Foil', payout: '£104 Cash / £122 Credit', game: 'MTG' },
+    { name: 'Base Set Charizard #4/102', payout: '£205 cash / £239 credit', game: 'Pokémon' },
+    { name: 'Umbreon VMAX Alt Art #215/203', payout: '£108 cash / £126 credit', game: 'Pokémon' },
+    { name: 'Mana Crypt, Double Masters', payout: '£130 cash / £151 credit', game: 'MTG' },
+    { name: 'Blue-Eyes White Dragon LOB-001', payout: '£86 cash / £101 credit', game: 'Yu-Gi-Oh!' },
+    { name: 'Bulk holos and reverse holos', payout: '5p per card', game: 'Bulk' },
+    { name: 'Bulk commons and uncommons', payout: '1.2p per card', game: 'Bulk' },
+    { name: 'Sealed booster packs', payout: '£3.20 per pack', game: 'Sealed' },
   ];
 
   return (
@@ -23,7 +23,7 @@ export default function BuylistTicker() {
         {/* Static Header Label */}
         <div className="hidden sm:flex items-center gap-1.5 px-4 text-[11px] font-black uppercase tracking-wider text-amber-400 shrink-0 bg-[#070d1e] z-10 border-r border-slate-800">
           <Flame className="w-3.5 h-3.5 fill-amber-400" />
-          <span>Live Buylist Ticker</span>
+          <span>Example offers</span>
         </div>
 
         {/* Marquee Content */}

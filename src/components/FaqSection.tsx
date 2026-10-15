@@ -15,32 +15,42 @@ const faqs: FaqItem[] = [
   {
     question: 'What is TCGBuyer?',
     answer:
-      'TCGBuyer is specialized software designed specifically for independent trading card game shops and hobby dealers. It gives your store a custom online buying portal where customers can submit their cards and collections for appraisal, while providing your staff with a unified dealer dashboard to review submissions, estimate card values, generate offers, and manage payouts all in one organised place.',
+      'TCGBuyer gives your trading card shop its own online buying page. Collectors upload photos of their cards (or type a list), see an estimated offer based on your rates, and send you the collection. In your dashboard you review it, make an offer, and the collector accepts, counters or declines.',
   },
   {
-    question: 'Which trading card games does TCGBuyer support?',
+    question: 'How much does it cost?',
     answer:
-      'TCGBuyer supports all major collectible trading card games including Pokémon TCG, Magic: The Gathering (MTG), Yu-Gi-Oh!, One Piece Card Game, Disney Lorcana, Flesh and Blood, Digimon, Dragon Ball Super, and sports cards (Topps, Panini, Bowman). You can easily toggle which games your specific store buys.',
+      'TCGBuyer is free while it is in early access, and you do not need a card to sign up. If paid plans are introduced later, we will tell shops in advance.',
   },
   {
-    question: 'How does the customer submission process work?',
+    question: 'Which trading card games does it support?',
     answer:
-      'Collectors visit your dedicated online portal (e.g., cards.yourstore.com or your customized link). They can upload photos of individual cards or binder pages, specify conditions, and see an estimated preliminary offer range based on your custom buying formula. Once submitted, the collection immediately appears in your dealer dashboard for review.',
+      'Pokémon, Magic: The Gathering and Yu-Gi-Oh! have automatic card lookup and price estimates. Collectors can also submit other games and sports cards, but those are not identified automatically yet, so you will price them yourself when you review.',
   },
   {
-    question: 'Can I customise the buying portal with my own branding?',
+    question: 'How are the prices worked out?',
     answer:
-      'Yes, absolutely. You can upload your store logo, match your brand colors, set custom buying policies, add your physical store address for drop-offs, and configure custom payout options (such as Cash, Bank Transfer / Faster Payments, PayPal, or In-Store Credit with optional trade-in bonuses).',
+      'Estimated values come from public price sources, converted to your currency. You choose what percentage of that value you pay in cash or store credit, and set flat per-card rates for bulk. These are estimates, not sold-listing data, and you always confirm the final offer after seeing the cards.',
   },
   {
-    question: 'Is there a cost to get started?',
+    question: 'Can I make the page look like my shop?',
     answer:
-      'You can start with a 14-day free trial without requiring a credit card. After that, we offer transparent monthly and annual plans tailored for both single brick-and-mortar hobby shops and multi-location TCG operations with no hidden transaction fees on purchases.',
+      'Yes. You can add your logo, pick an accent colour, write a welcome message, add info sections (such as what you buy, how you pay and your postage policy) and show your address, phone, email and opening hours. The page lives at your own TCGBuyer link, which you can share anywhere. Custom domains are not available yet.',
   },
   {
-    question: 'Do I need any technical knowledge to use TCGBuyer?',
+    question: 'How does photo recognition work, and where does my data go?',
     answer:
-      'None at all. Your buying portal is hosted and secured automatically with zero code required. You can share your custom link on your website, Instagram, Facebook, and Discord, or even print the provided QR code to place on your physical shop counter.',
+      'When a collector uploads a photo, it is sent to an AI service that reads the card name, set and number. You can see exactly which service in our Privacy Policy. Collectors can also search by name if they prefer. Recognition is a helper: the collector can correct a match and you check everything before making an offer.',
+  },
+  {
+    question: 'Do collectors need an account?',
+    answer:
+      'No. They can submit without one and track their submission with a reference. If they create an account (email or Google) they can see all their submissions and offers in one place.',
+  },
+  {
+    question: 'Do I need any technical knowledge?',
+    answer:
+      'No. Your page is hosted for you. Create your account, set your rates, and share the link on your website, Instagram, Facebook or Discord.',
   },
 ];
 

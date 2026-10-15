@@ -113,8 +113,30 @@ export function sanitizeStorefront(raw: any): Storefront {
 
 const KEY = 'tcg_storefronts';
 
+/** Built-in content for the public sample shop (`/?shop=demo-shop`), used until a local demo dealer edits it. */
+export const DEMO_DEALER_ID = 'demo-dealer';
+const DEMO_STOREFRONT: Storefront = sanitizeStorefront({
+  tagline: 'We buy Pokémon, Magic & Yu-Gi-Oh! collections',
+  welcome:
+    'Send us your cards for a fast, fair offer. Upload photos, see an estimate straight away, and we confirm the final price once we have seen them. Most offers are made within 24 hours.',
+  accent: '#2563eb',
+  contactEmail: 'buying@example.com',
+  contactPhone: '0113 496 0123',
+  address: 'Demo Card Shop\n12 Briggate\nLeeds LS1 6HD',
+  hours: 'Mon–Sat 10am–5:30pm',
+  infoBlocks: [
+    { title: 'What we buy', body: 'Pokémon, Magic: The Gathering and Yu-Gi-Oh! singles, binders and bulk. Sealed product too.' },
+    { title: 'How we pay', body: 'Bank transfer, PayPal or store credit (with a bonus). Payment within 2 working days of accepting.' },
+    { title: 'Postage', body: 'Use a tracked, insured service. We return anything you decline, free of charge.' },
+  ],
+});
+
 export async function getStorefront(dealerId: string): Promise<Storefront> {
-  if (IS_LOCAL) return sanitizeStorefront(readJson<Record<string, unknown>>(KEY, {})[dealerId]);
+  if (IS_LOCAL) {
+    const saved = readJson<Record<string, unknown>>(KEY, {})[dealerId];
+    return saved ? sanitizeStorefront(saved) : dealerId === DEMO_DEALER_ID ? DEMO_STOREFRONT : sanitizeStorefront(undefined);
+  }
+  if (dealerId === DEMO_DEALER_ID) return DEMO_STOREFRONT;
   try {
     const snap = await getDoc(doc(db, 'dealers', dealerId));
     return sanitizeStorefront(snap.data()?.storefront);

@@ -54,6 +54,7 @@ import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
 import PortalFooter from './PortalFooter';
 import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
 import { useMoney } from '../CurrencyContext';
+import { IS_LOCAL } from '../config';
 import CurrencySelect from './CurrencySelect';
 import { r2 } from '../services/currency';
 import ConditionGuideModal from './ConditionGuideModal';
@@ -616,6 +617,12 @@ export default function CustomerDashboard({
 
     const totalCount = cardItems.length + bulkCounts.commons + bulkCounts.holos + bulkCounts.ultraRares + bulkCounts.sealedPacks;
 
+    if (dealerId === 'demo-dealer' && !IS_LOCAL) {
+      alert('This is a sample buying page, so submissions are switched off. Create your own buying page to receive real submissions.');
+      setIsSubmitting(false);
+      return;
+    }
+
     if (!dealerId) {
       alert('This buying portal is not linked to a shop yet. Please use the link your shop gave you.');
       setIsSubmitting(false);
@@ -652,8 +659,8 @@ export default function CustomerDashboard({
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-[#070d1e] border-b border-slate-800/80 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-lg">
-        <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-[#070d1e] border-b border-slate-800/80 px-4 sm:px-8 py-3 sm:py-3.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 shadow-lg">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={onBackToHome}
             className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition-colors border border-slate-700/60"
@@ -662,21 +669,21 @@ export default function CustomerDashboard({
             <span>Home</span>
           </button>
           <div className="h-4 w-[1px] bg-slate-800" />
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 min-w-0">
             {storefront?.logoUrl ? (
               <img src={storefront.logoUrl} alt={`${shopName} logo`} className="h-7 max-w-[120px] object-contain" />
             ) : (
               <Logo size="sm" variant="light" />
             )}
             <span className="text-slate-400 text-xs hidden sm:inline">|</span>
-            <span className="font-bold text-sm tracking-wide text-white uppercase flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              {shopName} <span className="text-blue-400 font-normal">Buying Portal</span>
+            <span className="font-bold text-sm tracking-wide text-white uppercase flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0" />
+              <span className="truncate">{shopName}</span> <span className="text-blue-400 font-normal hidden sm:inline">Buying Portal</span>
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 ml-auto">
           <CurrencySelect />
           <button
             onClick={customer ? onOpenAccount : onSignIn}
@@ -689,12 +696,13 @@ export default function CustomerDashboard({
             className="text-xs text-slate-300 hover:text-white px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 flex items-center gap-1.5 transition-colors"
           >
             <Search className="w-3.5 h-3.5 text-blue-400" />
-            <span>Track Submission</span>
+            <span className="hidden sm:inline">Track Submission</span>
+            <span className="sm:hidden">Track</span>
           </button>
 
           <button
             onClick={onOpenDealerDashboard}
-            className="text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-sm transition-all"
+            className="hidden sm:inline-block text-xs font-semibold text-white px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 shadow-sm transition-all"
           >
             Dealer Login
           </button>

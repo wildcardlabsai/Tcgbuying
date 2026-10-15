@@ -3,26 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Store, User, Layers, Settings2 } from 'lucide-react';
+import { ScanLine, Percent, Coins, Printer } from 'lucide-react';
 
 export default function TrustBar() {
   const items = [
-    {
-      icon: Store,
-      label: 'Built for TCG dealers',
-    },
-    {
-      icon: User,
-      label: 'Your own buying portal',
-    },
-    {
-      icon: Layers,
-      label: 'Collection management',
-    },
-    {
-      icon: Settings2,
-      label: 'Designed around the buying process',
-    },
+    { icon: ScanLine, label: 'Photo card recognition' },
+    { icon: Percent, label: 'Your own offer rates' },
+    { icon: Coins, label: 'GBP, EUR and USD' },
+    { icon: Printer, label: 'Printable packing slips' },
   ];
 
   return (

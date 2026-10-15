@@ -173,12 +173,16 @@ export default function RoiCalculatorSection({ onGetStarted }: RoiCalculatorSect
                 </span>
               </div>
 
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Illustrative only. These figures come from simple assumptions (time saved per collection, extra volume from an online page, a 28% resale margin), not measured results. Adjust the sliders to your own numbers.
+              </p>
+
               {/* Call to action */}
               <button
                 onClick={onGetStarted}
                 className="w-full py-3.5 rounded-xl font-extrabold text-xs bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer mt-2"
               >
-                <span>Deploy TCGBuyer for Your Shop</span>
+                <span>Create my buying page</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 

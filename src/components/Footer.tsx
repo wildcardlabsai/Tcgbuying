@@ -12,9 +12,10 @@ interface FooterProps {
   onOpenPrivacy?: () => void;
   onOpenCollectorLogin?: () => void;
   onOpenAbout?: () => void;
+  onOpenTracker?: () => void;
 }
 
-export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOpenCollectorLogin, onOpenAbout }: FooterProps) {
+export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOpenCollectorLogin, onOpenAbout, onOpenTracker }: FooterProps) {
   return (
     <footer className="bg-white border-t border-slate-200 py-12 text-xs text-slate-500">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -25,7 +26,7 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
             <Logo size="sm" />
             <span className="hidden sm:inline text-slate-300">|</span>
             <p className="text-slate-500 text-xs">
-              TCGBuyer is buying software designed for trading card game dealers.
+              Online buying pages for trading card shops.
             </p>
           </div>
 
@@ -34,11 +35,11 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
             <a href="#how-it-works" className="hover:text-slate-900 transition-colors">
               How It Works
             </a>
-            <a href="#for-dealers" className="hover:text-slate-900 transition-colors">
-              For Dealers
-            </a>
             <a href="#features" className="hover:text-slate-900 transition-colors">
               Features
+            </a>
+            <a href="#pricing" className="hover:text-slate-900 transition-colors">
+              Pricing
             </a>
             <a href="#faq" className="hover:text-slate-900 transition-colors">
               FAQ
@@ -57,6 +58,11 @@ export default function Footer({ onOpenContact, onOpenTerms, onOpenPrivacy, onOp
             >
               Contact
             </button>
+            {onOpenTracker && (
+              <button onClick={onOpenTracker} className="hover:text-slate-900 transition-colors cursor-pointer">
+                Track a submission
+              </button>
+            )}
             {onOpenCollectorLogin && (
               <button
                 onClick={onOpenCollectorLogin}
