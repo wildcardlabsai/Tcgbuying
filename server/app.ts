@@ -186,26 +186,58 @@ async function fetchCardFromFreeApis(cardName: string, game: string, setName?: s
     imageUrl: '',
     rawMarketPrice: 0,
     priceKnown: false,
+    tcgplayerUrl: `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(cardName)}`,
   };
 }
 
 const FAST_GEN_CONFIG = { temperature: 0, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } };
 
-/** Call Gemini with a fast JSON config, falling back to a plain config and a known-good model. */
+type AiFailure = 'quota' | 'invalid_key' | 'model_unavailable' | 'unknown';
+
+/** Map a Gemini SDK error to something the app can act on. */
+function classifyAiError(err: any): AiFailure {
+  const msg = String(err?.message || '');
+  const status = Number(err?.status ?? err?.code);
+  if (status === 402 || status === 429 || /prepayment credits|RESOURCE_EXHAUSTED|quota/i.test(msg)) return 'quota';
+  if (status === 401 || status === 403 || /API key|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) return 'invalid_key';
+  if (status === 404 || /not found|no longer available/i.test(msg)) return 'model_unavailable';
+  return 'unknown';
+}
+
+class AiUnavailableError extends Error {
+  constructor(public kind: AiFailure) {
+    super(`AI unavailable: ${kind}`);
+  }
+}
+
+/**
+ * Call Gemini with a fast JSON config. Tries the configured model, then known alternates when a model is
+ * unavailable. Quota or key problems affect every model, so those stop immediately.
+ */
 async function generateWithFallback(params: { contents: any }) {
-  const models = [...new Set([GEMINI_MODEL, 'gemini-2.5-flash'])];
-  let lastErr: unknown;
+  const models = [...new Set([GEMINI_MODEL, 'gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite'])];
+  let last: AiFailure = 'unknown';
   for (const model of models) {
     for (const config of [FAST_GEN_CONFIG, undefined]) {
       try {
         return await aiClient!.models.generateContent({ model, contents: params.contents, config });
       } catch (err) {
-        lastErr = err;
+        last = classifyAiError(err);
+        if (last === 'quota' || last === 'invalid_key') throw new AiUnavailableError(last);
+        if (last === 'model_unavailable') break; // try the next model
       }
     }
   }
-  throw lastErr;
+  throw new AiUnavailableError(last);
 }
+
+/** HTTP error body for an AI failure, so the UI can explain what is wrong. */
+function aiErrorResponse(err: unknown) {
+  const kind = err instanceof AiUnavailableError ? err.kind : 'unknown';
+  const status = kind === 'unknown' ? 502 : 503;
+  return { status, body: { success: false, error: kind === 'unknown' ? 'recognition_failed' : `recognition_${kind}` } };
+}
+
 
 /**
  * Helper to convert any image input (HTTP/HTTPS URL, data URL, or raw base64) into
@@ -371,7 +403,8 @@ Format your response as valid JSON ONLY without markdown backticks:
         if (userHint) {
           detectedName = userHint;
         } else if (!hintOrUrlMatch) {
-          res.status(502).json({ success: false, error: 'recognition_failed' });
+          const { status, body } = aiErrorResponse(geminiError);
+          res.status(status).json(body);
           return;
         }
       }
@@ -418,6 +451,9 @@ Format your response as valid JSON ONLY without markdown backticks:
         cardNumber: (matchedData as any).cardNumber || detectedNumber,
         rarity: (matchedData as any).rarity || detectedRarity,
         imageUrl: matchedData.imageUrl,
+        tcgplayerUrl: (matchedData as any).tcgplayerUrl,
+        cardmarketUrl: (matchedData as any).cardmarketUrl,
+        sourceUrl: (matchedData as any).sourceUrl,
         marketPrice: finalMarketPrice,
         storeCashOffer,
         storeCreditOffer,
@@ -449,6 +485,7 @@ app.post('/api/recognize-multi-cards', async (req: Request, res: Response): Prom
 
     const resolved = await resolveImageBase64(imageBase64, mimeType);
     let detectedCards: any[] = [];
+    let multiScanError: unknown = null;
 
     if (aiClient && resolved.base64 && resolved.base64.length > 50) {
       try {
@@ -508,12 +545,18 @@ Return valid JSON ONLY without markdown backticks:
         }
       } catch (geminiErr) {
         console.warn('Multi-card scan note:', geminiErr);
+        multiScanError = geminiErr;
       }
     }
 
     // Fallback if vision didn't parse array: use benchmark collection items
     if (detectedCards.length === 0 && req.body.demo !== true) {
-      res.status(aiClient ? 502 : 503).json({ success: false, error: aiClient ? 'recognition_failed' : 'recognition_unavailable' });
+      if (!aiClient) {
+        res.status(503).json({ success: false, error: 'recognition_unavailable' });
+      } else {
+        const { status, body } = aiErrorResponse(multiScanError);
+        res.status(status).json(body);
+      }
       return;
     }
     if (detectedCards.length === 0) {
@@ -582,6 +625,9 @@ Return valid JSON ONLY without markdown backticks:
             cardNumber: (matched as any).cardNumber || dc.number,
             rarity: (matched as any).rarity || dc.rarity,
             imageUrl: matched.imageUrl,
+            tcgplayerUrl: (matched as any).tcgplayerUrl,
+            cardmarketUrl: (matched as any).cardmarketUrl,
+            sourceUrl: (matched as any).sourceUrl,
             marketPrice: basePrice,
             storeCashOffer,
             storeCreditOffer,
@@ -750,7 +796,37 @@ app.use('/api', emailRouter);
  * Health check
  */
 app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    // Booleans only: whether each optional service has its settings, never the values.
+    services: { ai: Boolean(aiClient), email: Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM) },
+  });
+});
+
+/**
+ * GET /api/ai-status: makes one tiny real call to Gemini so you can confirm the key, model and credits work.
+ * Cached for a minute so it cannot be used to run up usage.
+ */
+let aiStatusCache: { at: number; body: { configured: boolean; ok: boolean; reason: string; model?: string } } | null = null;
+app.get('/api/ai-status', async (_req: Request, res: Response) => {
+  if (aiStatusCache && Date.now() - aiStatusCache.at < 60_000) {
+    res.json(aiStatusCache.body);
+    return;
+  }
+  let body: { configured: boolean; ok: boolean; reason: string; model?: string };
+  if (!aiClient) {
+    body = { configured: false, ok: false, reason: 'no_key' };
+  } else {
+    try {
+      const r = await generateWithFallback({ contents: [{ role: 'user', parts: [{ text: 'Reply with {"ok":true}' }] }] });
+      body = { configured: true, ok: Boolean(r.text), reason: 'ok', model: (r as any).modelVersion };
+    } catch (err) {
+      body = { configured: true, ok: false, reason: err instanceof AiUnavailableError ? err.kind : 'unknown' };
+    }
+  }
+  aiStatusCache = { at: Date.now(), body };
+  res.json(body);
 });
 
 export default app;

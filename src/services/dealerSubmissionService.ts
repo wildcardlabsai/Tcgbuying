@@ -47,6 +47,8 @@ export interface SubmittedCardItem {
   rarity: string;
   userPhoto: string;
   officialImageUrl?: string;
+  /** Link to check this exact card on TCGplayer. */
+  tcgplayerUrl?: string;
   condition: string;
   marketPrice: number;
   cashOffer: number;

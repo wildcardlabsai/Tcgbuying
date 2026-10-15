@@ -52,6 +52,7 @@ import { createCustomerSubmission, SubmittedCardItem, LiveSubmission } from '../
 import PrintableManifestModal from './PrintableManifestModal';
 import { StorefrontBanner, StorefrontContact } from './StorefrontInfo';
 import PortalFooter from './PortalFooter';
+import CardLinks from './CardLinks';
 import { Storefront, DEFAULT_PRICING } from '../services/storefrontService';
 import { useMoney } from '../CurrencyContext';
 import { IS_LOCAL } from '../config';
@@ -581,6 +582,7 @@ export default function CustomerDashboard({
       rarity: c.matchedCard.rarity,
       userPhoto: c.userPhoto,
       officialImageUrl: c.matchedCard.imageUrl,
+      tcgplayerUrl: c.matchedCard.tcgplayerUrl,
       condition: c.selectedCondition,
       marketPrice: c.matchedCard.marketPrice,
       cashOffer: cashOf(c.matchedCard.marketPrice),
@@ -1370,6 +1372,7 @@ export default function CustomerDashboard({
                           </span>
                           <p className="text-[11px] text-slate-400">{item.matchedCard.game}</p>
                           <p className="text-[11px] text-slate-400">{item.matchedCard.setName}</p>
+                          <CardLinks card={item.matchedCard} />
                         </div>
                       </div>
 
@@ -2012,6 +2015,7 @@ export default function CustomerDashboard({
                     <p className="text-[10px] text-slate-400">
                       {card.game} • {card.setName} • #{card.cardNumber}
                     </p>
+                    <CardLinks card={card} />
                     <p className="text-[10px] text-emerald-400 font-semibold">
                       {card.marketPrice > 0 ? `Est. ${fmt(card.marketPrice)} (Cash ${fmt(cashOf(card.marketPrice))})` : 'No price available'}
                     </p>

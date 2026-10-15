@@ -49,6 +49,7 @@ import { sendOfferEmail } from '../services/notifyService';
 import PrintableManifestModal from './PrintableManifestModal';
 import StorefrontEditor from './StorefrontEditor';
 import BuylistSettings from './BuylistSettings';
+import CardLinks from './CardLinks';
 import CurrencySelect from './CurrencySelect';
 import { useMoney } from '../CurrencyContext';
 import { Storefront } from '../services/storefrontService';
@@ -665,6 +666,14 @@ export default function DealerDashboard({
                                       Comp: {fmt(card.marketPrice)} (Buy: {fmt(card.cashOffer)})
                                     </span>
                                   </div>
+                                  <CardLinks
+                                    card={{
+                                      name: card.name,
+                                      tcgplayerUrl:
+                                        card.tcgplayerUrl ||
+                                        `https://www.tcgplayer.com/search/all/product?q=${encodeURIComponent(card.name)}`,
+                                    }}
+                                  />
                                   {card.dealerNote && (
                                     <p className="text-[11px] text-slate-400 italic mt-1">
                                       Staff Note: "{card.dealerNote}"

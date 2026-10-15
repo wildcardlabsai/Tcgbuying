@@ -18,6 +18,10 @@ export interface MatchedCard {
   cardNumber: string;
   rarity: string;
   imageUrl: string;
+  /** Where the shopper can double-check this exact card (TCGplayer product or search page). */
+  tcgplayerUrl?: string;
+  cardmarketUrl?: string;
+  sourceUrl?: string;
   marketPrice: number;
   storeCashOffer: number;
   storeCreditOffer: number;
@@ -232,6 +236,20 @@ export async function shrinkImage(dataUrl: string, maxSide = 1024, quality = 0.7
 /**
  * Recognize an uploaded card image via /api/recognize-card
  */
+/** Explain a recognition failure in terms a collector can act on. */
+function recognitionErrorMessage(code?: string): string {
+  switch (code) {
+    case 'recognition_quota':
+    case 'recognition_invalid_key':
+    case 'recognition_unavailable':
+      return 'Photo recognition is not available right now. You can still add your cards by typing a list or searching by name.';
+    case 'card_not_identified':
+      return 'We could not read a card in that photo. Try a clearer, well-lit photo of the front, or add the card by name.';
+    default:
+      return 'We could not identify that card right now. Please try again, or add the card by name.';
+  }
+}
+
 export async function recognizeCardPhoto(
   rawBase64Data: string,
   fileName: string,
@@ -239,6 +257,7 @@ export async function recognizeCardPhoto(
 ): Promise<RecognizedCardItem> {
   const base64Data = await shrinkImage(rawBase64Data);
   const tempId = `card-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  let failureCode: string | undefined;
 
   try {
     const res = await fetch('/api/recognize-card', {
@@ -266,6 +285,8 @@ export async function recognizeCardPhoto(
           status: 'ready',
         };
       }
+    } else {
+      failureCode = (await res.json().catch(() => null))?.error;
     }
   } catch (err) {
     console.warn('API card recognition fallback:', err);
@@ -279,7 +300,7 @@ export async function recognizeCardPhoto(
       )
     : null;
   if (!fallback) {
-    throw new Error('We could not identify that card right now. Please try again, or add the card by name.');
+    throw new Error(recognitionErrorMessage(failureCode));
   }
 
   return {
@@ -324,6 +345,9 @@ export async function searchAlternativeCards(queryStr: string, game: string): Pr
       cardNumber: r.cardNumber || '',
       rarity: r.rarity || '',
       imageUrl: r.imageUrl || '',
+      tcgplayerUrl: r.tcgplayerUrl,
+      cardmarketUrl: r.cardmarketUrl,
+      sourceUrl: r.sourceUrl,
       marketPrice: price,
       storeCashOffer: Math.round(price * 0.72),
       storeCreditOffer: Math.round(price * 0.84),
@@ -353,6 +377,9 @@ export async function scanMultiCardBinderPhoto(
       }),
     });
 
+    let failureCode: string | undefined;
+    if (!res.ok) failureCode = (await res.json().catch(() => null))?.error;
+    if (failureCode && !demo) throw new Error(recognitionErrorMessage(failureCode));
     if (res.ok) {
       const data = await res.json();
       if (data.success && Array.isArray(data.cards) && data.cards.length > 0) {
@@ -370,6 +397,7 @@ export async function scanMultiCardBinderPhoto(
       }
     }
   } catch (err) {
+    if (!demo) throw err;
     console.warn('Multi-card scan fallback:', err);
   }
 

@@ -20,6 +20,12 @@ export interface CatalogCard {
   /** GBP estimate; 0 when no price is available. */
   rawMarketPrice: number;
   priceKnown: boolean;
+  /** Product page on TCGplayer (direct when the source provides it, otherwise a search for the card). */
+  tcgplayerUrl: string;
+  /** Cardmarket product page, when the source provides one. */
+  cardmarketUrl?: string;
+  /** The catalogue page the match came from (Pokémon TCG API / Scryfall / YGOPRODeck). */
+  sourceUrl?: string;
 }
 
 export type GameKey = 'pokemon' | 'mtg' | 'ygo' | 'any';
@@ -57,6 +63,11 @@ async function getJson(url: string): Promise<any | null> {
     return null;
   }
 }
+
+const TCGPLAYER_GAME: Record<string, string> = { pokemon: 'pokemon', mtg: 'magic', ygo: 'yugioh' };
+const tcgplayerSearch = (game: keyof typeof TCGPLAYER_GAME, name: string) =>
+  `https://www.tcgplayer.com/search/${TCGPLAYER_GAME[game]}/product?q=${encodeURIComponent(name)}`;
+const httpsOnly = (u: unknown) => (typeof u === 'string' && u.startsWith('https://') ? u : undefined);
 
 const esc = (s: string) => s.replace(/["\\]/g, ' ').trim();
 const money = (n: unknown, rate: number) => {
@@ -126,6 +137,9 @@ function mapPokemon(p: any): CatalogCard {
     imageUrl: p.images?.large || p.images?.small || '',
     rawMarketPrice: price,
     priceKnown: price > 0,
+    tcgplayerUrl: httpsOnly(p.tcgplayer?.url) || tcgplayerSearch('pokemon', `${p.name} ${p.number || ''}`.trim()),
+    cardmarketUrl: httpsOnly(p.cardmarket?.url),
+    sourceUrl: `https://pokemontcg.io/card-search?q=${encodeURIComponent(p.id)}`,
   };
 }
 
@@ -156,6 +170,9 @@ async function searchMtg(o: SearchOpts, exactName: boolean): Promise<CatalogCard
       imageUrl: c.image_uris?.normal || c.card_faces?.[0]?.image_uris?.normal || '',
       rawMarketPrice: price,
       priceKnown: price > 0,
+      tcgplayerUrl: httpsOnly(c.purchase_uris?.tcgplayer) || tcgplayerSearch('mtg', c.name),
+      cardmarketUrl: httpsOnly(c.purchase_uris?.cardmarket),
+      sourceUrl: httpsOnly(c.scryfall_uri),
     };
   });
 }
@@ -183,6 +200,8 @@ async function searchYgo(o: SearchOpts, exactName: boolean): Promise<CatalogCard
       imageUrl: card.card_images?.[0]?.image_url || '',
       rawMarketPrice: price,
       priceKnown: price > 0,
+      tcgplayerUrl: tcgplayerSearch('ygo', set?.set_code || card.name),
+      sourceUrl: httpsOnly(card.ygoprodeck_url),
     });
   }
   return out;
