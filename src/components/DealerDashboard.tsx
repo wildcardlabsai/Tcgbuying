@@ -118,7 +118,10 @@ export default function DealerDashboard({
   const [alertPerm, setAlertPerm] = useState<NotificationPermission | 'unsupported'>(
     typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
   );
-  const portalLink = `${window.location.origin}/?shop=${dealerSlug}`;
+  const publicBase = /localhost|127\.0\.0\.1/.test(window.location.hostname)
+    ? window.location.origin
+    : (import.meta.env.VITE_PUBLIC_URL as string | undefined) || 'https://tcgbuyer.xyz';
+  const portalLink = `${publicBase.replace(/\/$/, '')}/?shop=${dealerSlug}`;
   const [linkCopied, setLinkCopied] = useState(false);
 
   // Subscribe to real-time Firestore submissions
@@ -451,7 +454,7 @@ export default function DealerDashboard({
                 }`}
               >
                 <Settings className="w-4 h-4" />
-                <span>Pricing &amp; Bulk</span>
+                <span>Shop Settings</span>
               </button>
             </nav>
           </div>

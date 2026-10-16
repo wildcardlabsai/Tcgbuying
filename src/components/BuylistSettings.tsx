@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import {
   Storefront,
   PricingSettings,
@@ -42,6 +43,8 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
   const [pricing, setPricing] = useState<PricingSettings>(DEFAULT_PRICING);
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [copied, setCopied] = useState(false);
+  const [address, setAddress] = useState('');
+  const [qr, setQr] = useState('');
   const [buylist, setBuylist] = useState<BuylistEntry[]>([]);
   const [templates, setTemplates] = useState<OfferTemplate[]>([]);
   const [newEntry, setNewEntry] = useState({ name: '', setName: '', cashPrice: '', creditPrice: '' });
@@ -54,6 +57,7 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
       if (live) {
         setStore(s);
         setPricing(s.pricing);
+        setAddress(s.address);
         setBuylist(s.buylist);
         setTemplates(s.offerTemplates);
       }
@@ -62,6 +66,10 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
       live = false;
     };
   }, [dealerId]);
+
+  useEffect(() => {
+    QRCode.toDataURL(portalLink, { margin: 2, width: 512 }).then(setQr).catch(() => setQr(''));
+  }, [portalLink]);
 
   if (!store) return <p className="text-xs text-slate-400">Loading…</p>;
 
@@ -74,7 +82,7 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
 
   const handleSave = async () => {
     setStatus('saving');
-    const next = { ...store, pricing: sanitizePricing(pricing), buylist, offerTemplates: templates };
+    const next = { ...store, address: address.trim().slice(0, 300), pricing: sanitizePricing(pricing), buylist, offerTemplates: templates };
     const ok = await saveStorefront(dealerId, next);
     setStatus(ok ? 'saved' : 'error');
     if (ok) {
@@ -132,14 +140,15 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="border-b border-slate-800 pb-4">
-        <h2 className="text-xl font-black text-white">Pricing &amp; Bulk Rates</h2>
+        <h2 className="text-xl font-black text-white">Shop settings</h2>
         <p className="text-xs text-slate-400 mt-1">
-          Choose what share of estimated market value you pay, and flat rates for bulk. Collectors see offers calculated from these.
+          Your public link, where collectors post their cards, and your default pricing. Remember to press Save changes.
         </p>
       </div>
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-2">
-        <label className={label}>Your customer buying portal link</label>
+      <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-3">
+        <h3 className="text-sm font-bold text-white">Your public buying page</h3>
+        <p className="text-xs text-slate-400">Give this link to collectors, or put the QR code on your counter, flyers and social posts.</p>
         <div className="flex gap-2">
           <input readOnly value={portalLink} onFocus={(e) => e.currentTarget.select()} className={`${field} flex-1 font-mono`} />
           <button
@@ -153,7 +162,38 @@ export default function BuylistSettings({ dealerId, portalLink, onSaved }: Buyli
           >
             {copied ? 'Copied!' : 'Copy'}
           </button>
+          <a href={portalLink} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+            Open
+          </a>
         </div>
+        {qr && (
+          <div className="flex items-center gap-4 pt-1">
+            <img src={qr} alt="QR code for your buying page" className="w-28 h-28 rounded-lg bg-white p-1" />
+            <a href={qr} download="buying-page-qr.png" className="px-3 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+              Download QR code
+            </a>
+          </div>
+        )}
+      </section>
+
+      <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-2">
+        <h3 className="text-sm font-bold text-white">Where collectors post their cards</h3>
+        <p className="text-xs text-slate-400">
+          Shown on the collector's confirmation, their tracking page and the printable packing slip (which carries the submission QR code).
+        </p>
+        <textarea
+          rows={4}
+          maxLength={300}
+          className={field}
+          value={address}
+          onChange={(e) => { setAddress(e.target.value); markDirty(); }}
+          placeholder={'Your shop name\n1 High Street\nTown, AB1 2CD'}
+        />
+      </section>
+
+      <div className="pt-1">
+        <h3 className="text-sm font-bold text-white">Default pricing</h3>
+        <p className="text-xs text-slate-400 mt-1">What share of market value you pay, and flat rates for bulk. Collectors see offers calculated from these.</p>
       </div>
 
       <section className="bg-slate-900 rounded-xl border border-slate-800 p-5 space-y-4">
